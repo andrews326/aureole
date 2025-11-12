@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Cosmic Base Colors */
+    --background: 240 15% 4%;
+    --foreground: 240 10% 90%;
+
+    /* Deep Space Elements */
+    --card: 240 12% 6%;
+    --card-foreground: 240 10% 92%;
+
+    --popover: 240 12% 8%;
+    --popover-foreground: 240 10% 92%;
+
+    /* Cosmic Accents */
+    --primary: 180 45% 45%;
+    --primary-foreground: 240 10% 98%;
+
+    --secondary: 260 50% 40%;
+    --secondary-foreground: 240 10% 98%;
+
+    --muted: 240 10% 15%;
+    --muted-foreground: 240 8% 60%;
+
+    --accent: 45 90% 60%;
+    --accent-foreground: 240 15% 10%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 240 10% 98%;
+
+    /* Glass Elements */
+    --border: 240 15% 18%;
+    --input: 240 12% 10%;
+    --ring: 180 45% 45%;
+
+    --radius: 1rem;
+
+    /* Cosmic Gradients */
+    --gradient-cosmic: linear-gradient(135deg, hsl(240, 30%, 8%), hsl(260, 40%, 18%), hsl(240, 25%, 15%));
+    --gradient-nebula: linear-gradient(135deg, hsl(180, 45%, 25%), hsl(260, 50%, 30%), hsl(280, 40%, 25%));
+    --gradient-aurora: linear-gradient(90deg, hsl(180, 50%, 50%), hsl(260, 60%, 50%), hsl(300, 50%, 50%));
+    
+    /* Glassmorphism */
+    --glass-bg: rgba(8, 8, 16, 0.7);
+    --glass-border: rgba(224, 224, 255, 0.1);
+    
+    /* Special Effects */
+    --star-glow: 0 0 20px rgba(255, 215, 0, 0.4);
+    --cosmic-glow: 0 0 30px rgba(45, 156, 147, 0.3);
+    --void-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+
+    /* Animations */
+    --transition-cosmic: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    background: rgba(8, 8, 16, 0.7);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(224, 224, 255, 0.1);
+  }
+  
+  .glass-input {
+    background: rgba(10, 10, 18, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(224, 224, 255, 0.15);
+  }
+  
+  .cosmic-glow {
+    box-shadow: 0 0 30px rgba(45, 156, 147, 0.3);
+  }
+  
+  .star-glow {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+  }
+  
+  .text-cosmic {
+    background: linear-gradient(135deg, hsl(180, 50%, 70%), hsl(260, 60%, 70%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+  
+  .animate-twinkle {
+    animation: twinkle 3s ease-in-out infinite;
+  }
+  
+  .animate-glow {
+    animation: glow 2s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes twinkle {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes glow {
+  from {
+    box-shadow: 0 0 20px rgba(45, 156, 147, 0.3);
+  }
+  to {
+    box-shadow: 0 0 40px rgba(45, 156, 147, 0.6);
+  }
+}
+
+@keyframes particle-burst {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-150px) scale(0);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+

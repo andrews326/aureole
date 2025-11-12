@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    container_name: aureole-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - app/.env
+    volumes:
+      - ./app:/app
+    depends_on:
+      - db
+    restart: always
+
+  frontend:
+    build:
+      context: .
+      dockerfile: interface/Dockerfile
+    container_name: aureole-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: always
+
+  db:
+    image: postgres:16
+    container_name: aureole-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aureole
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: always
+
+volumes:
+  pgdata:

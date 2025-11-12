@@ -1,0 +1,74 @@
+# aureole/app/main.py
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from utils.config import settings
+from routers.auth_router import router as auth_router
+from routers.profile_router_01 import router as profile_setup_router
+from routers.profile_router_02 import router as profile_verification_router
+from routers.ai_router import router as ai_router
+from routers.profile_router_03 import router as ai_2_router
+from routers.profile_router_04 import router as profile_location_router
+from routers.match_router import router as match_router
+from routers.user_router import router as user
+from routers.message_router import router as ws_router
+from routers.report_router import router as report_router
+from routers.interaction_router import router as interaction_router
+from routers.coversation_router import router as conversation_router
+from routers.notification_ws import router as notification_ws_router
+from routers.profile import router as profile
+
+
+app = FastAPI(
+    title="Aureole Dating App API",
+    description="AI-powered, safe, and authentic dating app backend",
+    version="0.1.0",
+    docs_url="/docs",        # Swagger UI
+    redoc_url="/redoc",      # ReDoc
+)
+
+# Ensure directory exists
+os.makedirs("uploads", exist_ok=True)
+
+# Mount uploads as static files
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "ok",
+        "message": "Aureole backend is running!",
+        "environment": "local"
+    }
+
+# You'll add routers here later, e.g.:
+
+# -------------------------
+# Include Routers
+# -------------------------
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(profile_setup_router, prefix="/api/v1")
+app.include_router(profile_verification_router, prefix="/api/v1")
+app.include_router(ai_router, prefix="/api/v1")
+app.include_router(profile_location_router, prefix="/api/v1")
+app.include_router(match_router, prefix="/api/v1")
+app.include_router(user, prefix="/api/v1")
+app.include_router(ai_2_router, prefix="/api/v1")
+app.include_router(report_router, prefix="/api/v1")
+app.include_router(interaction_router, prefix="/api/v1")
+app.include_router(conversation_router, prefix="/api/v1")
+app.include_router(profile, prefix="/api/v1")
+# Include WebSocket router
+app.include_router(ws_router)
+app.include_router(notification_ws_router)
