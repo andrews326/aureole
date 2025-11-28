@@ -1,153 +1,3 @@
-// // src/pages/Auth.tsx
-
-
-// import { useState, useEffect } from "react";
-// import {jwtDecode} from "jwt-decode";
-// import { useNavigate } from "react-router-dom";
-// import { Button } from "@/components/ui/button";
-// import { Input } from "@/components/ui/input";
-// import { Label } from "@/components/ui/label";
-// import { useToast } from "@/hooks/use-toast";
-// import { useDispatch } from "react-redux";
-// import { setAuth } from "@/redux/slices/authSlice";
-// import { login as loginService, signup as signupService, getMyProfile } from "@/services/authService";
-// import { motion } from "framer-motion";
-// import Plasma from "@/components/Plasma";
-
-// const Auth = () => {
-//   const [isLogin, setIsLogin] = useState(true);
-//   const [email, setEmail] = useState("");
-//   const [phone, setPhone] = useState("");
-//   const [password, setPassword] = useState("");
-//   const [loading, setLoading] = useState(false);
-
-//   const navigate = useNavigate();
-//   const { toast } = useToast();
-//   const dispatch = useDispatch();
-
-//   // Auth-only theme flag
-//   useEffect(() => {
-//     localStorage.setItem("auth_theme_enabled", "1");
-//     return () => localStorage.removeItem("auth_theme_enabled");
-//   }, []);
-
-//   const handleSubmit = async (e: React.FormEvent) => {
-//     e.preventDefault();
-//     setLoading(true);
-
-//     try {
-//       if (isLogin) {
-//         // LOGIN (URL-encoded)
-//         const res = await loginService(email, password);
-//         const { access_token } = res;
-//         if (!access_token) throw new Error("No access token returned");
-
-//         const decoded: any = jwtDecode(access_token);
-//         const user = { id: decoded.user_id, email };
-
-//         // set token + user in redux (avatar default applied by slice)
-//         dispatch(setAuth({ token: access_token, user }));
-
-//         // fetch profile with token and decide redirect
-//         const profileRes = await getMyProfile(access_token);
-//         if (profileRes.exists) {
-//           // if profile includes avatar or extra fields, update user
-//           dispatch(
-//             // @ts-ignore
-//             (dispatch as any)( (d: any) =>
-//               d({ type: "auth/updateUser", payload: { avatar: profileRes.avatar } })
-//             )
-//           );
-//           toast({
-//             title: "Welcome back 🌟",
-//             description: "Redirecting to discovery...",
-//           });
-//           navigate("/discovery");
-//         } else {
-//           toast({
-//             title: "Welcome!",
-//             description: "Redirecting to profile setup...",
-//           });
-//           navigate("/onboarding");
-//         }
-//       } else {
-//         // SIGNUP (JSON)
-//         const res = await signupService(email, phone, password);
-//         const { user_id } = res;
-//         toast({
-//           title: "Account created",
-//           description: "Please sign in to continue.",
-//         });
-
-//         // require explicit login: switch to login tab and prefill email
-//         setIsLogin(true);
-//         setPassword("");
-//         setEmail(email);
-//       }
-//     } catch (err: any) {
-//       toast({
-//         title: "Authentication failed",
-//         description: err.response?.data?.detail || err.message || "Please try again",
-//         variant: "destructive",
-//       });
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   return (
-//     <div className="relative min-h-screen flex items-center justify-center overflow-hidden text-white">
-//       {localStorage.getItem("auth_theme_enabled") && (
-//         <div className="absolute inset-0 -z-10">
-//           <Plasma color="#ff6b35" speed={0.6} direction="forward" scale={1.1} opacity={0.8} mouseInteractive={true} />
-//           <div className="absolute inset-0 bg-black/40" />
-//         </div>
-//       )}
-
-//       <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: "easeOut" }} className="relative z-10 w-full max-w-md px-4">
-//         <div className="backdrop-blur-xl bg-white/10 border border-white/20 shadow-2xl rounded-3xl px-8 py-10">
-//           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="text-center mb-10">
-//             <h1 className="text-5xl font-extrabold tracking-tight mb-2 text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">Aureole</h1>
-//             <p className="text-sm text-white/60">Where souls connect ✨</p>
-//           </motion.div>
-
-//           <div className="flex mb-8 bg-white/10 rounded-full p-1 backdrop-blur-sm">
-//             <button onClick={() => setIsLogin(true)} className={`flex-1 py-2 rounded-full text-sm font-semibold transition-all ${isLogin ? "bg-gradient-to-r from-indigo-500 to-sky-500 text-white shadow-md" : "text-white/70 hover:text-white"}`}>Login</button>
-//             <button onClick={() => setIsLogin(false)} className={`flex-1 py-2 rounded-full text-sm font-semibold transition-all ${!isLogin ? "bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md" : "text-white/70 hover:text-white"}`}>Sign Up</button>
-//           </div>
-
-//           <form onSubmit={handleSubmit} className="space-y-5">
-//             <div>
-//               <Label htmlFor="email" className="text-white/80">Email</Label>
-//               <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:ring-2 focus:ring-sky-400" />
-//             </div>
-
-//             {!isLogin && (
-//               <div>
-//                 <Label htmlFor="phone" className="text-white/80">Phone</Label>
-//                 <Input id="phone" type="tel" placeholder="+91 9876543210" value={phone} onChange={(e) => setPhone(e.target.value)} required className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:ring-2 focus:ring-pink-400" />
-//               </div>
-//             )}
-
-//             <div>
-//               <Label htmlFor="password" className="text-white/80">Password</Label>
-//               <Input id="password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:ring-2 focus:ring-indigo-400" />
-//             </div>
-
-//             <motion.div whileTap={{ scale: 0.97 }}>
-//               <Button type="submit" disabled={loading} className="w-full mt-2 bg-gradient-to-r from-indigo-500 to-sky-500 hover:from-indigo-400 hover:to-sky-400 text-white font-semibold rounded-full py-2 shadow-lg">
-//                 {loading ? "Connecting..." : isLogin ? "Sign In" : "Create Account"}
-//               </Button>
-//             </motion.div>
-//           </form>
-//         </div>
-//       </motion.div>
-//     </div>
-//   );
-// };
-
-// export default Auth;
-
 // src/pages/Auth.tsx
 
 import { useState } from "react";
@@ -157,10 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { login as loginService, signup as signupService, getMyProfile } from "@/services/authService";
+import { login as loginService, signup as signupService, checkProfileStatus } from "@/services/authService";
 import { jwtDecode } from "jwt-decode";
 import { useDispatch } from "react-redux";
 import { setAuth } from "@/redux/slices/authSlice";
+
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -174,68 +25,65 @@ const Auth = () => {
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-    
-        try {
-          if (isLogin) {
-            // LOGIN (URL-encoded)
-            const res = await loginService(email, password);
-            const { access_token } = res;
-            if (!access_token) throw new Error("No access token returned");
-    
-            const decoded: any = jwtDecode(access_token);
-            const user = { id: decoded.user_id, email };
-    
-            // set token + user in redux (avatar default applied by slice)
-            dispatch(setAuth({ token: access_token, user }));
-    
-            // fetch profile with token and decide redirect
-            const profileRes = await getMyProfile(access_token);
-            if (profileRes.exists) {
-              // if profile includes avatar or extra fields, update user
-              dispatch(
-                // @ts-ignore
-                (dispatch as any)( (d: any) =>
-                  d({ type: "auth/updateUser", payload: { avatar: profileRes.avatar } })
-                )
-              );
-              toast({
-                title: "Welcome back 🌟",
-                description: "Redirecting to discovery...",
-              });
-              navigate("/discovery");
-            } else {
-              toast({
-                title: "Welcome!",
-                description: "Redirecting to profile setup...",
-              });
-              navigate("/onboarding");
-            }
-          } else {
-            // SIGNUP (JSON)
-            const res = await signupService(email, phone, password);
-            const { user_id } = res;
-            toast({
-              title: "Account created",
-              description: "Please sign in to continue.",
-            });
-    
-            // require explicit login: switch to login tab and prefill email
-            setIsLogin(true);
-            setPassword("");
-            setEmail(email);
-          }
-        } catch (err: any) {
+    e.preventDefault();
+    setLoading(true);
+  
+    try {
+      if (isLogin) {
+        // 1) LOGIN
+        const res = await loginService(email, password);
+        const { access_token } = res;
+        if (!access_token) throw new Error("No access token returned");
+  
+        const decoded: any = jwtDecode(access_token);
+        const user = { id: decoded.user_id, email };
+        console.log("LOGIN TOKEN:", access_token);
+        console.log("LOGIN USER:", user);
+  
+        // 2) Save to Redux
+        dispatch(setAuth({ token: access_token, user }));
+  
+        // 3) Check profile status (LIGHTWEIGHT)
+        const status = await checkProfileStatus(access_token);
+  
+        if (status.exists) {
           toast({
-            title: "Authentication failed",
-            description: err.response?.data?.detail || err.message || "Please try again",
-            variant: "destructive",
+            title: "Welcome back 🌟",
+            description: "Redirecting...",
           });
-        } finally {
-          setLoading(false);
+          navigate("/discovery");
+        } else {
+          toast({
+            title: "Let's set up your profile",
+            description: "Redirecting...",
+          });
+          navigate("/onboarding");
         }
-      };
+      } else {
+        // SIGNUP
+        const res = await signupService(email, phone, password);
+        const { user_id } = res;
+  
+        toast({
+          title: "Account created",
+          description: "Please sign in to continue.",
+        });
+  
+        setIsLogin(true);
+        setPassword("");
+        setEmail(email);
+      }
+    } catch (err: any) {
+      toast({
+        title: "Authentication failed",
+        description: err.response?.data?.detail || err.message || "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-black text-white">

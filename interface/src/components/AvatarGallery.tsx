@@ -2,118 +2,65 @@
 //  AVATAR GALLERY — Neon Glow Raya-Style Gallery (Hero + 4 Medium)
 // ─────────────────────────────────────────────────────────────
 
+// components/AvatarGallery.tsx
 import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface Props {
-  heroPhoto: string;
-  mediumPhotos: string[];
-  extraPhotos: string[];
-  onOpen: (index: number) => void; // index in modalPhotos array
+interface AvatarGalleryProps {
+  photos?: string[];
+  onOpen: (index: number) => void;
 }
 
-export default function AvatarGallery({
-  heroPhoto,
-  mediumPhotos,
-  extraPhotos,
-  onOpen,
-}: Props) {
-  const [ drawerOpen, setDrawerOpen ] = useState(false);
-
-  // modal indexes:
-  // hero = 0
-  // medium = 1..4
-  // extras = after that
-  const mediumStartIndex = 1;
-  const extraStartIndex = 1 + mediumPhotos.length;
+export default function AvatarGallery({ photos, onOpen }: AvatarGalleryProps) {
+  const [scrollPos, setScrollPos] = useState(0);
+  const scrollBy = (dir: number) => {
+    const container = document.getElementById("circular-gallery");
+    if (!container) return;
+    container.scrollBy({ left: dir * 250, behavior: "smooth" });
+    setScrollPos(container.scrollLeft + dir * 250);
+  };
 
   return (
-    <div className="mb-8">
-
-      {/* ─────────────────────────────────────────────── */}
-      {/*  HERO PHOTO (NEON) */}
-      {/* ─────────────────────────────────────────────── */}
-      <div
-        className={cn(
-          "relative rounded-3xl overflow-hidden mb-4 cursor-pointer neon-border group",
-          "transition-transform duration-300 hover:scale-[1.015]"
-        )}
-        onClick={() => onOpen(0)}
+    <div className="relative w-full my-8">
+      {/* Scroll buttons */}
+      <button
+        className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/40 hover:bg-black/60 rounded-full text-white backdrop-blur-sm"
+        onClick={() => scrollBy(-1)}
       >
-        <img
-          src={heroPhoto}
-          className="w-full h-[360px] object-cover"
-        />
+        <ChevronLeft className="w-5 h-5" />
+      </button>
 
-        {/* neon glow overlay */}
-        <div className="absolute inset-0 pointer-events-none neon-glow" />
+      <div
+        id="circular-gallery"
+        className="flex gap-4 overflow-x-auto scrollbar-hide px-12 pb-3"
+      >
+        {photos.map((src, i) => (
+          <div
+            key={i}
+            onClick={() => onOpen(i)}
+            className={cn(
+              "relative w-28 h-28 flex-shrink-0 rounded-full overflow-hidden cursor-pointer neon-border group",
+              "transition-all duration-300 hover:scale-105"
+            )}
+          >
+            <img
+              src={src}
+              alt={`user media ${i + 1}`}
+              loading="lazy"
+              className="w-full h-full object-cover rounded-full"
+            />
+            <div className="absolute inset-0 neon-glow opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+          </div>
+        ))}
       </div>
 
-      {/* ─────────────────────────────────────────────── */}
-      {/*  MEDIUM PHOTOS (4 slots) */}
-      {/* ─────────────────────────────────────────────── */}
-      {mediumPhotos.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          {mediumPhotos.map((src, i) => (
-            <div
-              key={i}
-              className={cn(
-                "relative rounded-2xl overflow-hidden cursor-pointer neon-border",
-                "transition-transform duration-300 hover:scale-[1.03]"
-              )}
-              onClick={() => onOpen(mediumStartIndex + i)}
-            >
-              <img src={src} className="w-full h-40 object-cover" />
-              <div className="absolute inset-0 neon-glow" />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────── */}
-      {/*  EXTRA PHOTOS (DRAWER) */}
-      {/* ─────────────────────────────────────────────── */}
-      {extraPhotos.length > 0 && (
-        <div className="mt-4">
-          <button
-            onClick={() => setDrawerOpen(!drawerOpen)}
-            className="flex items-center gap-2 mx-auto text-cosmic text-sm mb-2"
-          >
-            {drawerOpen ? (
-              <>
-                Hide additional photos <ChevronUp className="w-4 h-4" />
-              </>
-            ) : (
-              <>
-                Show additional photos <ChevronDown className="w-4 h-4" />
-              </>
-            )}
-          </button>
-
-          {drawerOpen && (
-            <div className="grid grid-cols-3 gap-3 mt-3 animate-fade-in">
-              {extraPhotos.map((src, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "relative rounded-xl overflow-hidden cursor-pointer neon-border",
-                    "transition-transform duration-300 hover:scale-[1.03]"
-                  )}
-                  onClick={() => onOpen(extraStartIndex + i)}
-                >
-                  <img
-                    src={src}
-                    className="w-full h-28 object-cover"
-                  />
-                  <div className="absolute inset-0 neon-glow" />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
+      <button
+        className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/40 hover:bg-black/60 rounded-full text-white backdrop-blur-sm"
+        onClick={() => scrollBy(1)}
+      >
+        <ChevronRight className="w-5 h-5" />
+      </button>
     </div>
   );
 }

@@ -70,3 +70,18 @@ async def get_my_profile(current_user: User = Depends(get_current_user), db: Asy
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
+
+
+@router.get("/profile/status")
+async def get_my_profile(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Profile.user_id).where(Profile.user_id == current_user.id)
+    )
+    profile = result.scalar_one_or_none()
+
+    # Only return profile existence
+    return {"exists": bool(profile)}
+

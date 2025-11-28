@@ -1,7 +1,6 @@
 // src/redux/slices/profileSlice.ts
 
 
-// src/redux/slices/profileSlice.ts
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import * as profileService from "@/services/profileService";
 

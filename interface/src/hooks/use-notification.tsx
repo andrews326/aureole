@@ -1,8 +1,7 @@
 // src/hooks/use-notification.tsx
 
 
-// src/hooks/use-notification.tsx
-import { createContext, useContext, ReactNode, useEffect } from "react";
+import { createContext, useContext, ReactNode, useEffect, useRef } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import type { RootState } from "@/redux/store";
 import { toast } from "sonner";
@@ -10,18 +9,13 @@ import { Heart, MessageCircle, Eye } from "lucide-react";
 import { PersistentNotificationService } from "@/services/notificationService";
 import { notificationReceived } from "@/redux/slices/notificationSlice";
 
-interface NotificationContextType {
-  sendTest?: (type: string) => void;
-}
-
-const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+const NotificationContext = createContext({});
 
 export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   const userId = useSelector((s: RootState) => s.auth.user?.id);
   const dispatch = useDispatch();
 
-  const makeId = () =>
-    crypto.randomUUID?.() || `nid-${Date.now()}`;
+  const wsRef = useRef<PersistentNotificationService | null>(null);
 
   const showToast = (type: string, message: string) => {
     const Icon =
@@ -36,38 +30,40 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      if (wsRef.current) {
+        wsRef.current.disconnect();
+        wsRef.current = null;
+      }
+      return;
+    }
 
-    const service = PersistentNotificationService.getInstance(userId);
+    // Full teardown before starting new WS
+    if (wsRef.current) {
+      wsRef.current.disconnect();
+      wsRef.current = null;
+    }
+
+    // Create a brand new instance
+    const service = new PersistentNotificationService(userId);
+    wsRef.current = service;
+
     service.connect();
 
     service.onNotification((event) => {
+      console.log("🔥 RAW WS NOTIFICATION:", event);
+
       if (event.event !== "notification" || !event.data) return;
 
-      const backend = event.data.type?.toLowerCase();
-
-      const mapped =
-        backend === "match" ? "match" :
-        backend === "message" ? "message" :
-        backend === "like" ? "like" :
-        backend === "system" ? "system" :
-        "visit";
-
-      const payload = {
-        id: makeId(),
-        type: mapped as any,
-        title: event.data.title || mapped.toUpperCase(),
-        message: event.data.meta?.note || event.data.message || "You have a notification",
-        timestamp: new Date().toISOString(),
-        read: false,
-        meta: event.data.meta || {},
-      };
-
-      dispatch(notificationReceived(payload));
-      showToast(mapped, payload.message);
+      dispatch(notificationReceived(event.data));
+      showToast(event.data.type, event.data.message_preview || event.data.actor_name);
     });
 
-  }, [userId]);
+    return () => {
+      service.disconnect();
+    };
+
+  }, [userId]);  // 👈 reactively reconnects based on userID
 
   return (
     <NotificationContext.Provider value={{}}>
@@ -76,8 +72,4 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-export const useNotifications = () => {
-  const ctx = useContext(NotificationContext);
-  if (!ctx) throw new Error("useNotifications must be used inside NotificationProvider");
-  return ctx;
-};
+export const useNotifications = () => useContext(NotificationContext);

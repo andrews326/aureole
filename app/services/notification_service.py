@@ -8,8 +8,9 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, and_, func, delete, or_, update, any_
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.match_model import View, Swipe, Like, Match
-from models.user_model import User, Notification
+from models.user_model import User, Notification, UserMedia
 from models.message_model import Message
+from models.block_model import UserBlock
 
 
 MAX_VIEWS_PER_MINUTE = 20
@@ -19,150 +20,184 @@ MAX_SWIPES_PER_DAY = 800
 UNDO_COOLDOWN_MINUTES = 5     # undo must happen within 5 minutes
 UNDO_DAILY_LIMIT = 3          # max 3 undos per day
 MAX_MATCHES_PER_DAY = 15
+BASE_URL = "http://127.0.0.1:8000"
 
 
 
-
-async def record_view(db: AsyncSession, viewer_id: str, viewed_id: str, dedupe: bool = True):
-    """Record a profile view. Notify only if viewed user is premium."""
-    if viewer_id == viewed_id:
-        raise HTTPException(status_code=400, detail="Cannot view your own profile.")
-    from utils.like_utils import check_action_rate_limit
-    # 1️⃣ Rate-limit reuse
-    await check_action_rate_limit(db, View, "viewer_id", viewer_id,
-                                  per_minute=MAX_VIEWS_PER_MINUTE,
-                                  per_day=MAX_VIEWS_PER_DAY)
-
-    # 2️⃣ Optional deduplication
-    if dedupe:
-        existing = await db.scalar(
-            select(View).where(View.viewer_id == viewer_id, View.viewed_id == viewed_id)
-        )
-        if existing:
-            return {"created": False, "view_id": str(existing.id), "notified": False}
-
-    # 3️⃣ Store the view
-    view = View(viewer_id=viewer_id, viewed_id=viewed_id)
-    db.add(view)
-    await db.commit()
-    await db.refresh(view)
-
-    # 4️⃣ Notify only if viewed user is premium & active
-    viewed_user = await db.scalar(select(User).where(User.id == viewed_id, User.is_active.is_(True)))
-    if not viewed_user or viewed_user.premium_tier <= 0:
-        return {"created": True, "view_id": str(view.id), "notified": False}
-
-    # 5️⃣ Send real-time notification
-    q = await db.execute(select(User.full_name).where(User.id == viewer_id))
-    viewer_name = q.scalar_one_or_none()
-
-    await create_and_push_notification(
-        db=db,
-        recipient_id=viewed_id,
-        notif_type="view",
-        actor_id=viewer_id,
-        actor_name=viewer_name,
-        meta={"is_premium_view": True, "note": f"{viewer_name or 'Someone'} viewed your profile."}
-    )
-
-    return {"created": True, "view_id": str(view.id), "notified": True}
-
-
-
-async def record_swipe(db: AsyncSession, swiper_id: str, swiped_id: str, liked: bool):
+async def record_swipe(
+    db: AsyncSession,
+    swiper_id: str,
+    swiped_id: str,
+    liked: bool
+):
     """
-    Record a swipe (right or left).  
-    If liked=True -> send notification and check for mutual.  
-    Returns dict: { created, is_mutual, swipe_id, match(optional) }
+    Record a swipe (right or left).
+    For liked=True:
+      • send rich 'swipe_like' notification
+      • detect mutual swipe/like → send match notifications
     """
 
-    # 1️⃣ Self-swipe protection
+    # 1️⃣ Self protection
     if swiper_id == swiped_id:
         raise HTTPException(status_code=400, detail="Cannot swipe on yourself.")
 
-    # 2️⃣ Check target availability
+    # 2️⃣ Target availability
     target = await db.scalar(select(User).where(User.id == swiped_id))
     if not target or not target.is_active or target.is_profile_hidden:
         raise HTTPException(status_code=404, detail="Target user not available or hidden.")
+
     from utils.like_utils import check_action_rate_limit
-    # 3️⃣ Rate limit (reuse generic utility)
-    await check_action_rate_limit(db, Swipe, "swiper_id", swiper_id,
-                                  per_minute=MAX_SWIPES_PER_MINUTE,
-                                  per_day=MAX_SWIPES_PER_DAY)
+
+    # 3️⃣ Rate-limit
+    await check_action_rate_limit(
+        db, Swipe, "swiper_id", swiper_id,
+        per_minute=MAX_SWIPES_PER_MINUTE,
+        per_day=MAX_SWIPES_PER_DAY
+    )
 
     # 4️⃣ Upsert swipe
     existing = await db.scalar(
-        select(Swipe).where(Swipe.swiper_id == swiper_id, Swipe.swiped_id == swiped_id)
+        select(Swipe).where(
+            Swipe.swiper_id == swiper_id,
+            Swipe.swiped_id == swiped_id
+        )
     )
 
     now = datetime.now(timezone.utc)
 
     if existing:
-        # Same action again -> ignore
+        # identical action = ignore
         if existing.liked == liked and not existing.undone:
-            return {"created": False, "is_mutual": False, "swipe_id": str(existing.id)}
+            return {
+                "created": False,
+                "is_mutual": False,
+                "swipe_id": str(existing.id)
+            }
 
-        # Re-activate or change direction
         existing.liked = liked
         existing.undone = False
         db.add(existing)
         await db.commit()
         await db.refresh(existing)
         swipe_obj = existing
+
     else:
-        swipe_obj = Swipe(swiper_id=swiper_id, swiped_id=swiped_id, liked=liked, undone=False)
+        swipe_obj = Swipe(
+            swiper_id=swiper_id,
+            swiped_id=swiped_id,
+            liked=liked,
+            undone=False
+        )
         db.add(swipe_obj)
         await db.commit()
         await db.refresh(swipe_obj)
 
-    # 5️⃣ If left swipe -> done
+    # 5️⃣ Left swipe → nothing else
     if not liked:
         return {"created": True, "is_mutual": False, "swipe_id": str(swipe_obj.id)}
 
-    # 6️⃣ Notify swiped user (real-time)
-    swiper_name = await db.scalar(select(User.full_name).where(User.id == swiper_id))
+    # -------------------------
+    # 6️⃣ Build rich NOTIFICATION
+    # -------------------------
+
+    # fetch swiper name
+    swiper_name = await db.scalar(
+        select(User.full_name).where(User.id == swiper_id)
+    )
+
+    # fetch swiper profile image (verified first)
+    media_res = await db.execute(
+        select(UserMedia.file_path)
+        .where(
+            UserMedia.user_id == swiper_id,
+            UserMedia.media_type == "image"
+        )
+        .order_by(
+            UserMedia.is_verified.desc(),
+            UserMedia.created_at.asc()
+        )
+    )
+
+    rows = media_res.scalars().all()
+    actor_image = rows[0] if rows else None
+
+    # This is a RIGHT SWIPE → means "match request"
     await create_and_push_notification(
         db=db,
         recipient_id=swiped_id,
         notif_type="swipe_like",
         actor_id=swiper_id,
         actor_name=swiper_name,
-        meta={"note": f"{swiper_name or 'Someone'} liked your profile!"}
+        target_id=swiped_id,
+        message_preview=f"{swiper_name} right-swiped you",
+        meta={
+            "action": "swipe_like",
+            "match_request": True,
+            "actor_image": actor_image,
+            "timestamp": now.isoformat()
+        }
     )
 
-    # 7️⃣ Check for mutual swipe or explicit like
+    # -------------------------
+    # 7️⃣ Check mutual match
+    # -------------------------
     reverse_swipe = await db.scalar(
         select(Swipe).where(
             Swipe.swiper_id == swiped_id,
             Swipe.swiped_id == swiper_id,
             Swipe.liked.is_(True),
-            Swipe.undone.is_(False),
+            Swipe.undone.is_(False)
         )
     )
+
     reverse_like = await db.scalar(
-        select(Like).where(Like.liker_id == swiped_id, Like.liked_id == swiper_id)
+        select(Like).where(
+            Like.liker_id == swiped_id,
+            Like.liked_id == swiper_id
+        )
     )
 
     if reverse_swipe or reverse_like:
-        # 8️⃣ Create mutual match if not already
+
+        # prevent duplicate matches
         match_exists = await db.scalar(
             select(Match).where(
-                and_(Match.user_id == swiper_id, Match.target_id == swiped_id)
+                or_(
+                    and_(Match.user_id == swiper_id, Match.target_id == swiped_id),
+                    and_(Match.user_id == swiped_id, Match.target_id == swiper_id),
+                )
             )
         )
+
         if not match_exists:
             match = Match(
                 user_id=swiper_id,
                 target_id=swiped_id,
                 score=1.0,
                 is_mutual=True,
-                matched_at=now,
+                matched_at=now
             )
             db.add(match)
             await db.commit()
             await db.refresh(match)
 
-            # 🔔 Notify both users
+            # Fetch image for *target user* too
+            media_res2 = await db.execute(
+                select(UserMedia.file_path)
+                .where(
+                    UserMedia.user_id == swiped_id,
+                    UserMedia.media_type == "image"
+                )
+                .order_by(
+                    UserMedia.is_verified.desc(),
+                    UserMedia.created_at.asc()
+                )
+            )
+
+            rows2 = media_res2.scalars().all()
+            target_image = rows2[0] if rows2 else None
+
+            # Notify swiped user
             await create_and_push_notification(
                 db=db,
                 recipient_id=swiped_id,
@@ -170,8 +205,15 @@ async def record_swipe(db: AsyncSession, swiper_id: str, swiped_id: str, liked: 
                 actor_id=swiper_id,
                 actor_name=swiper_name,
                 target_id=swiper_id,
-                meta={"mutual": True, "note": f"You and {swiper_name or 'someone'} matched!"}
+                message_preview=f"You matched with {swiper_name}",
+                meta={
+                    "mutual": True,
+                    "actor_image": actor_image,
+                    "timestamp": now.isoformat()
+                }
             )
+
+            # Notify swiper user
             await create_and_push_notification(
                 db=db,
                 recipient_id=swiper_id,
@@ -179,18 +221,31 @@ async def record_swipe(db: AsyncSession, swiper_id: str, swiped_id: str, liked: 
                 actor_id=swiped_id,
                 actor_name=target.full_name,
                 target_id=swiped_id,
-                meta={"mutual": True, "note": f"You and {target.full_name or 'someone'} matched!"}
+                message_preview=f"You matched with {target.full_name}",
+                meta={
+                    "mutual": True,
+                    "actor_image": target_image,
+                    "timestamp": now.isoformat()
+                }
             )
 
             return {
                 "created": True,
                 "is_mutual": True,
                 "swipe_id": str(swipe_obj.id),
-                "match_id": str(match.id),
+                "match_id": str(match.id)
             }
 
-    # 9️⃣ Default: like recorded, no mutual yet
-    return {"created": True, "is_mutual": False, "swipe_id": str(swipe_obj.id)}
+    # -------------------------
+    # 8️⃣ No mutual yet
+    # -------------------------
+    return {
+        "created": True,
+        "is_mutual": False,
+        "swipe_id": str(swipe_obj.id)
+    }
+
+
 
 
 async def undo_last_swipe(db: AsyncSession, user_id: str):
@@ -206,7 +261,7 @@ async def undo_last_swipe(db: AsyncSession, user_id: str):
             detail="Undo (rewind) feature is available only for premium users."
         )
 
-    # 1️⃣ Get today's undo count
+    # 2️⃣ Today's undo count
     today_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
     undo_count = await db.scalar(
         select(func.count())
@@ -221,7 +276,7 @@ async def undo_last_swipe(db: AsyncSession, user_id: str):
     if undo_count >= UNDO_DAILY_LIMIT:
         raise HTTPException(status_code=429, detail="Undo limit reached for today.")
 
-    # 2️⃣ Find most recent non-undone swipe
+    # 3️⃣ Find last swipe
     last_swipe = await db.scalar(
         select(Swipe)
         .where(Swipe.swiper_id == user_id, Swipe.undone.is_(False))
@@ -230,28 +285,33 @@ async def undo_last_swipe(db: AsyncSession, user_id: str):
     if not last_swipe:
         raise HTTPException(status_code=404, detail="No swipe to undo.")
 
-    # 3️⃣ Cooldown validation
+    # 4️⃣ Cooldown window
     if (now - last_swipe.created_at) > timedelta(minutes=UNDO_COOLDOWN_MINUTES):
-        raise HTTPException(status_code=400, detail=f"Undo window expired ({UNDO_COOLDOWN_MINUTES} min limit).")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Undo window expired ({UNDO_COOLDOWN_MINUTES} min limit)."
+        )
 
-    # 4️⃣ Mark undone
+    # 5️⃣ Mark undone
     last_swipe.undone = True
     db.add(last_swipe)
     await db.commit()
     await db.refresh(last_swipe)
 
-    # 5️⃣ If this swipe was a 'like', check if a mutual match existed — deactivate it
+    # 6️⃣ If it was a right swipe, deactivate match silently
     if last_swipe.liked:
         match = await db.scalar(
             select(Match).where(
-                and_(
-                    Match.is_mutual.is_(True),
-                    Match.is_active.is_(True),
-                    ((Match.user_id == user_id) & (Match.target_id == last_swipe.swiped_id)) |
-                    ((Match.user_id == last_swipe.swiped_id) & (Match.target_id == user_id))
+                Match.is_mutual.is_(True),
+                Match.is_active.is_(True),
+                (
+                    (Match.user_id == user_id) & (Match.target_id == last_swipe.swiped_id)
+                ) | (
+                    (Match.user_id == last_swipe.swiped_id) & (Match.target_id == user_id)
                 )
             )
         )
+
         if match:
             match.is_active = False
             match.is_mutual = False
@@ -260,17 +320,14 @@ async def undo_last_swipe(db: AsyncSession, user_id: str):
             db.add(match)
             await db.commit()
 
-            # Notify the other user about unmatch (quietly)
-            await create_and_push_notification(
-                db=db,
-                recipient_id=last_swipe.swiped_id,
-                notif_type="unmatch",
-                actor_id=user_id,
-                meta={"reason": "undo_swipe", "note": "Your match was undone."}
-            )
+            # ❌ DO NOT notify the other user
+            # Previously this leaked:
+            # await create_and_push_notification(...)
+            # REMOVE THIS COMPLETELY
 
-    # 6️⃣ Send a "rewind" notification (optional UI effect)
+    # 7️⃣ Notify only the user who did the undo
     swiper_name = await db.scalar(select(User.full_name).where(User.id == user_id))
+
     await create_and_push_notification(
         db=db,
         recipient_id=user_id,
@@ -289,7 +346,6 @@ async def undo_last_swipe(db: AsyncSession, user_id: str):
         "swipe_id": str(last_swipe.id),
         "undo_count_today": undo_count + 1,
     }
-
 
 
 async def undo_like(db: AsyncSession, liker_id: str, liked_id: str):
@@ -315,14 +371,15 @@ async def undo_like(db: AsyncSession, liker_id: str, liked_id: str):
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="No like found to undo.")
 
-    # 3️⃣ If a match existed between these two users, deactivate it
+    # 3️⃣ If a match existed, deactivate it silently
     match = await db.scalar(
         select(Match).where(
-            and_(
-                Match.is_active.is_(True),
-                Match.is_mutual.is_(True),
-                ((Match.user_id == liker_id) & (Match.target_id == liked_id)) |
-                ((Match.user_id == liked_id) & (Match.target_id == liker_id))
+            Match.is_active.is_(True),
+            Match.is_mutual.is_(True),
+            (
+                (Match.user_id == liker_id) & (Match.target_id == liked_id)
+            ) | (
+                (Match.user_id == liked_id) & (Match.target_id == liker_id)
             )
         )
     )
@@ -335,20 +392,11 @@ async def undo_like(db: AsyncSession, liker_id: str, liked_id: str):
         db.add(match)
         await db.commit()
 
-        # Notify other user of unmatch
-        await create_and_push_notification(
-            db=db,
-            recipient_id=liked_id,
-            notif_type="unmatch",
-            actor_id=liker_id,
-            actor_name=liker.full_name,
-            meta={
-                "reason": "undo_like",
-                "note": f"{liker.full_name or 'Someone'} unliked and your match was undone."
-            }
-        )
+        # ❌ DO NOT notify the other user
+        # REMOVE THIS:
+        # await create_and_push_notification(...)
 
-    # 4️⃣ Notify self (feedback / toast)
+    # 4️⃣ Notify *only the liker* (UI feedback)
     await create_and_push_notification(
         db=db,
         recipient_id=liker_id,
@@ -356,7 +404,7 @@ async def undo_like(db: AsyncSession, liker_id: str, liked_id: str):
         actor_id=liker_id,
         actor_name=liker.full_name,
         meta={
-            "note": f"You unliked {liked_id}.",
+            "note": f"You unliked this user.",
             "premium_only": True,
             "timestamp": now.isoformat(),
         }
@@ -368,24 +416,25 @@ async def undo_like(db: AsyncSession, liker_id: str, liked_id: str):
         "premium_only": True
     }
 
-
-
 async def unmatch_user(db: AsyncSession, user_id: str, target_id: str):
-    """Manually unmatch a user — deactivates mutual match and notifies both."""
+    """
+    Unmatch AND block the target user.
+    """
     now = datetime.now(timezone.utc)
 
-    # 1️⃣ Validate both users
+    # 1) Validate users
     user = await db.scalar(select(User).where(User.id == user_id))
     target = await db.scalar(select(User).where(User.id == target_id))
     if not user or not target:
-        raise HTTPException(status_code=404, detail="User not found.")
+        raise HTTPException(404, "User not found.")
 
-    # 2️⃣ Locate active mutual match (either direction)
+    # 2) Find active mutual match
     matches = (await db.execute(
         select(Match).where(
-            or_(
-                and_(Match.user_id == user_id, Match.target_id == target_id),
-                and_(Match.user_id == target_id, Match.target_id == user_id),
+            (
+                (Match.user_id == user_id) & (Match.target_id == target_id)
+            ) | (
+                (Match.user_id == target_id) & (Match.target_id == user_id)
             ),
             Match.is_active.is_(True),
             Match.is_mutual.is_(True),
@@ -393,32 +442,36 @@ async def unmatch_user(db: AsyncSession, user_id: str, target_id: str):
     )).scalars().all()
 
     if not matches:
-        raise HTTPException(status_code=404, detail="No active match found.")
+        raise HTTPException(404, "No active match found.")
 
-    # 3️⃣ Deactivate both sides of match
+    # 3) Disable match rows
     for match in matches:
         match.is_active = False
         match.is_mutual = False
-        match.reason = "manual_unmatch"
+        match.reason = "block"
         match.unmatched_at = now
         db.add(match)
 
-    await db.commit()
-
-    # 4️⃣ Notify target user
-    await create_and_push_notification(
-        db=db,
-        recipient_id=target_id,
-        notif_type="unmatch",
-        actor_id=user_id,
-        actor_name=user.full_name,
-        meta={
-            "reason": "manual_unmatch",
-            "note": f"{user.full_name or 'Someone'} unmatched you.",
-        },
+    # ---------------------------
+    # 4️⃣ BLOCK THE USER (NEW)
+    # ---------------------------
+    existing = await db.scalar(
+        select(UserBlock).where(
+            (UserBlock.blocker_id == user_id) &
+            (UserBlock.blocked_id == target_id)
+        )
     )
 
-    # 5️⃣ Optional feedback notification to self (for UX)
+    if not existing:
+        db.add(UserBlock(
+            blocker_id=user_id,
+            blocked_id=target_id,
+            hide_only=False,
+        ))
+
+    await db.commit()
+
+    # 5) Notify self only
     await create_and_push_notification(
         db=db,
         recipient_id=user_id,
@@ -428,16 +481,15 @@ async def unmatch_user(db: AsyncSession, user_id: str, target_id: str):
         target_id=target_id,
         meta={
             "self_action": True,
-            "note": f"You unmatched {target.full_name or 'this user'}.",
+            "note": f"You blocked {target.full_name or 'this user'}.",
         },
     )
 
     return {
-        "message": "Match removed successfully.",
-        "unmatched_user": str(target_id),
+        "message": "User blocked and unmatched successfully.",
+        "blocked_user": str(target_id),
         "timestamp": now.isoformat(),
     }
-
 
 
 async def create_match(db: AsyncSession, user_a_id: str, user_b_id: str, score: float = 1.0):
@@ -637,7 +689,18 @@ async def create_and_push_notification(
     try:
         success = await manager.send_personal_message(recipient_id, {
             "event": "notification",
-            "data": payload
+            "data": {
+                   "id": str(notif.id),
+                   "type": notif.type,
+                   "actor_id": notif.actor_id,
+                   "actor_name": notif.actor_name,
+                   "target_id": notif.target_id,
+                   "conversation_id": notif.conversation_id,
+                   "message_preview": notif.message_preview,
+                   "timestamp": notif.created_at.isoformat(),
+                   "payload": notif.payload,    # keep the old structure EXACTLY as-is
+                   }
+
         })
 
         if success:
@@ -654,3 +717,63 @@ async def create_and_push_notification(
         print(f"⚠️ Failed to send notification {notif_id} to {recipient_id}: {e}")
 
     return notif
+
+
+async def fetch_user_media_map(db, user_ids: list[str]):
+    """
+    Returns dict -> { user_id: [photo_urls...] }
+    Always sorted by created_at.
+    Always normalized to full URLs.
+    """
+    if not user_ids:
+        return {}
+
+    stmt = (
+        select(UserMedia.user_id, UserMedia.file_path)
+        .where(
+            UserMedia.user_id.in_(user_ids),
+            UserMedia.media_type == "image"
+        )
+        .order_by(UserMedia.created_at)
+    )
+
+    res = await db.execute(stmt)
+    rows = res.all()
+
+    media_map = {}
+
+    for uid, path in rows:
+        uid = str(uid)
+
+        # Normalize URL
+        url = (
+            path if path.startswith("http")
+            else f"{BASE_URL}/{path.lstrip('/')}"
+        )
+
+        media_map.setdefault(uid, []).append(url)
+
+    return media_map
+
+
+
+async def assert_can_send(db, sender_id, receiver_id):
+    # Case 1: receiver blocked sender → sender cannot message
+    blocked_by_receiver = await db.scalar(
+        select(UserBlock).where(
+            (UserBlock.blocker_id == receiver_id) &
+            (UserBlock.blocked_id == sender_id)
+        )
+    )
+    if blocked_by_receiver:
+        raise HTTPException(403, "You cannot message this user. They have blocked you.")
+
+    # Case 2: sender blocked receiver → sender cannot message either
+    sender_has_blocked = await db.scalar(
+        select(UserBlock).where(
+            (UserBlock.blocker_id == sender_id) &
+            (UserBlock.blocked_id == receiver_id)
+        )
+    )
+    if sender_has_blocked:
+        raise HTTPException(403, "You have blocked this user.")

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────
-//  PROFILE PAGE — PREMIUM NEON COSMIC UI (Hero + Gallery + Aura)
+//  PROFILE PAGE — Cosmic Aura Profile (with Circular Gallery)
 // ─────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from "react";
@@ -25,63 +25,97 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-
 import { Edit3, Check, X, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import AvatarCosmic from "@/components/AvatarCosmic";
-import { cn } from "@/lib/utils";
+import { fetchBlockedUsers, unblockUser } from "@/services/sessionService";
+import { ShieldX, Undo2 } from "lucide-react";
+
 
 export default function Profile() {
   const dispatch = useDispatch<AppDispatch>();
   const { user, loading } = useAppSelector((state) => state.user);
   const { toast } = useToast();
 
-  // ───────────────────────────────────────────────────
-  //  STATE
-  // ───────────────────────────────────────────────────
   const [isEditing, setIsEditing] = useState(false);
   const [modalIndex, setModalIndex] = useState<number | null>(null);
-
   const [formData, setFormData] = useState({
     full_name: "",
     bio: "",
     interests: [] as string[],
   });
-
   const [newInterest, setNewInterest] = useState("");
+
+  const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
+  const [loadingBlocked, setLoadingBlocked] = useState(false);
+
 
   // ───────────────────────────────────────────────────
   //  LOAD USER
   // ───────────────────────────────────────────────────
   useEffect(() => {
+    if (!user) return;
+  
+    setFormData({
+      full_name: user.full_name || "",
+      bio: user.bio || user.raw_prompts?.about || "",
+      interests:
+        user.preferences?.interests ||
+        user.raw_prompts?.interests ||
+        [],
+    });
+  }, [user]);
+  
+  useEffect(() => {
     dispatch(fetchUser());
   }, [dispatch]);
 
   useEffect(() => {
-    if (!user) return;
+    const loadBlocked = async () => {
+      try {
+        setLoadingBlocked(true);
+        const res = await fetchBlockedUsers();
+        setBlockedUsers(res.data.blocked || []);
+      } catch (e) {
+        console.error("Failed to load blocked users", e);
+      } finally {
+        setLoadingBlocked(false);
+      }
+    };
+    loadBlocked();
+  }, []);
 
-    setFormData({
-      full_name: user.full_name || "",
-      bio: user.bio || "",
-      interests: user.stats?.interests || [],
-    });
-  }, [user]);
+
+  const handleUnblock = async (id: string) => {
+    try {
+      await unblockUser(id);
+      setBlockedUsers((prev) => prev.filter((u) => u.id !== id));
+  
+      toast({
+        title: "User unblocked",
+        description: "You can now chat and interact again.",
+      });
+    } catch (e) {
+      console.error("Unblock failed", e);
+      toast({
+        title: "Unblock failed",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  
 
   // ───────────────────────────────────────────────────
-  //  MEDIA UPLOAD
+  //  HANDLERS
   // ───────────────────────────────────────────────────
   const handleUpload = async (file: File) => {
     dispatch(uploadUserMedia(file))
       .unwrap()
       .then(() => toast({ title: "Photo uploaded!" }))
-      .catch(() =>
-        toast({ title: "Upload failed", variant: "destructive" })
-      );
+      .catch(() => toast({ title: "Upload failed", variant: "destructive" }));
   };
 
-  // ───────────────────────────────────────────────────
-  //  AURA
-  // ───────────────────────────────────────────────────
   const handleAura = () => {
     dispatch(activateUserAura())
       .unwrap()
@@ -96,9 +130,6 @@ export default function Profile() {
       );
   };
 
-  // ───────────────────────────────────────────────────
-  //  SAVE PROFILE
-  // ───────────────────────────────────────────────────
   const handleSave = () => {
     dispatch(
       editUser({
@@ -111,24 +142,16 @@ export default function Profile() {
         setIsEditing(false);
         toast({ title: "Profile updated!" });
       })
-      .catch(() =>
-        toast({ title: "Update failed", variant: "destructive" })
-      );
+      .catch(() => toast({ title: "Update failed", variant: "destructive" }));
   };
 
-  // ───────────────────────────────────────────────────
-  //  INTERESTS
-  // ───────────────────────────────────────────────────
   const handleAddInterest = () => {
     const value = newInterest.trim();
-    if (!value) return;
-    if (formData.interests.includes(value)) return;
-
+    if (!value || formData.interests.includes(value)) return;
     setFormData((prev) => ({
       ...prev,
       interests: [...prev.interests, value],
     }));
-
     setNewInterest("");
   };
 
@@ -139,9 +162,6 @@ export default function Profile() {
     }));
   };
 
-  // ───────────────────────────────────────────────────
-  //  LOADING STATE
-  // ───────────────────────────────────────────────────
   if (loading || !user)
     return (
       <div className="min-h-screen flex items-center justify-center text-white">
@@ -150,51 +170,35 @@ export default function Profile() {
     );
 
   // ───────────────────────────────────────────────────
-  //  USER MEDIA ORDER
+  //  PREPARE MEDIA
   // ───────────────────────────────────────────────────
   const media = user.media || [];
-
-  // hero is the avatar OR last media fallback
   const heroPhoto =
-    user.profile_photo ||
-    media[0]?.file_path ||
-    "/images/default-avatar.png";
-
+    user.profile_photo || media[0]?.file_path || "/images/default-avatar.png";
   const mediumPhotos = media
     .filter((m) => m.file_path !== heroPhoto)
-    .map((m) => m.file_path)
-    .slice(0, 4);
-
-  const extraPhotos = media
-    .filter((m) => m.file_path !== heroPhoto)
-    .map((m) => m.file_path)
-    .slice(4);
-
-  // Mapping for modal (all photos in viewing order)
-  const modalPhotos = [
-    heroPhoto,
-    ...media.filter((m) => m.file_path !== heroPhoto).map((m) => m.file_path),
-  ];
+    .map((m) => m.file_path);
+  const modalPhotos = [heroPhoto, ...mediumPhotos];
 
   // ───────────────────────────────────────────────────
   //  RENDER
   // ───────────────────────────────────────────────────
   return (
-    <div className="min-h-screen relative">
+    <div className="min-h-screen relative text-white">
       <CosmicBackground />
 
-      {/* FULLSCREEN PHOTO MODAL */}
+      {/* MODAL */}
       {modalIndex !== null && (
         <PhotoViewerModal
           photos={modalPhotos}
           index={modalIndex}
           onClose={() => setModalIndex(null)}
-          onSetAvatar={(file_path) => {
-            const mediaItem = user.media.find((m) => m.file_path === file_path);
+          onSetAvatar={(src) => {
+            const mediaItem = user.media.find((m) => m.file_path === src);
             if (mediaItem) dispatch(setUserAvatar(mediaItem.id));
           }}
-          onDelete={(file_path) => {
-            const mediaItem = user.media.find((m) => m.file_path === file_path);
+          onDelete={(src) => {
+            const mediaItem = user.media.find((m) => m.file_path === src);
             if (mediaItem) {
               dispatch(removeUserMedia(mediaItem.id));
               toast({ title: "Photo removed" });
@@ -204,18 +208,15 @@ export default function Profile() {
       )}
 
       <div className="relative z-10 container max-w-2xl mx-auto px-4 py-6 pb-24">
-
         {/* HEADER */}
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-cosmic">My Profile</h1>
-
           <div className="flex gap-2">
             {isEditing ? (
               <>
                 <Button size="sm" onClick={handleSave} className="bg-green-600">
                   <Check className="w-4 h-4 mr-1" /> Save
                 </Button>
-
                 <Button
                   size="sm"
                   variant="destructive"
@@ -225,22 +226,22 @@ export default function Profile() {
                 </Button>
               </>
             ) : (
-              <Button size="sm" variant="secondary" onClick={() => setIsEditing(true)}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setIsEditing(true)}
+              >
                 <Edit3 className="w-4 h-4 mr-1" /> Edit
               </Button>
             )}
           </div>
         </div>
 
-        {/* ──────────────────────────────────────────────── */}
-        {/*  AVATAR + PROFILE INFO */}
-        {/* ──────────────────────────────────────────────── */}
+        {/* AVATAR + INFO */}
         <Card className="glass-card mb-6">
           <CardHeader>
             <div className="flex items-start gap-4">
-
               <AvatarCosmic src={heroPhoto} size={120} />
-
               <div className="flex-1">
                 {isEditing ? (
                   <Input
@@ -253,7 +254,6 @@ export default function Profile() {
                 ) : (
                   <CardTitle className="text-2xl">{user.full_name}</CardTitle>
                 )}
-
                 <p className="text-muted-foreground">
                   {user.age ? `${user.age} years old` : ""}
                 </p>
@@ -276,19 +276,10 @@ export default function Profile() {
           </CardContent>
         </Card>
 
-        {/* ──────────────────────────────────────────────── */}
-        {/*  PHOTO GALLERY (Hero + Mediums + Drawer) */}
-        {/* ──────────────────────────────────────────────── */}
-        <AvatarGallery
-          heroPhoto={heroPhoto}
-          mediumPhotos={mediumPhotos}
-          extraPhotos={extraPhotos}
-          onOpen={(i) => setModalIndex(i)}
-        />
+        {/* PHOTO GALLERY */}
+        <AvatarGallery photos={modalPhotos} onOpen={(i) => setModalIndex(i)} />
 
-        {/* ──────────────────────────────────────────────── */}
-        {/*  INTERESTS SECTION */}
-        {/* ──────────────────────────────────────────────── */}
+        {/* INTERESTS */}
         <Card className="glass-card mb-6">
           <CardHeader>
             <CardTitle>Interests</CardTitle>
@@ -321,7 +312,6 @@ export default function Profile() {
                   value={newInterest}
                   onChange={(e) => setNewInterest(e.target.value)}
                 />
-
                 <Button
                   variant="secondary"
                   disabled={!newInterest.trim()}
@@ -334,26 +324,69 @@ export default function Profile() {
           </CardContent>
         </Card>
 
-        {/* ──────────────────────────────────────────────── */}
-        {/*  AURA SECTION */}
-        {/* ──────────────────────────────────────────────── */}
+        {/* AURA */}
         <Card className="glass-card mb-6">
           <CardHeader>
             <CardTitle>Your Aura</CardTitle>
           </CardHeader>
-
           <CardContent>
             <p className="text-sm mb-4">{user.ai_summary}</p>
-
             <Button className="w-full cosmic-glow" onClick={handleAura}>
               <Sparkles className="w-4 h-4 mr-2" /> Refresh Aura
             </Button>
           </CardContent>
         </Card>
 
-        {/* ──────────────────────────────────────────────── */}
-        {/*  STATS */}
-        {/* ──────────────────────────────────────────────── */}
+
+        {/* BLOCKED USERS */}
+<Card className="glass-card mb-6">
+  <CardHeader>
+    <CardTitle className="flex items-center gap-2">
+      <ShieldX className="w-5 h-5 text-red-400" />
+      Blocked Users
+    </CardTitle>
+  </CardHeader>
+
+  <CardContent>
+    {loadingBlocked ? (
+      <p className="text-muted-foreground">Loading blocked users…</p>
+    ) : blockedUsers.length === 0 ? (
+      <p className="text-muted-foreground">You have not blocked anyone.</p>
+    ) : (
+      <div className="space-y-4">
+        {blockedUsers.map((user) => (
+          <div
+            key={user.id}
+            className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10"
+          >
+            <div className="flex items-center gap-3">
+              <AvatarCosmic src={user.profile_photo} size={50} />
+              <div>
+                <div className="font-semibold">{user.full_name}</div>
+                <div className="text-xs text-muted-foreground">
+                  Blocked on {new Date(user.blocked_at).toLocaleString()}
+                </div>
+              </div>
+            </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-green-300 border-green-300/40 hover:bg-green-300/10"
+              onClick={() => handleUnblock(user.id)}
+            >
+              <Undo2 className="w-4 h-4 mr-1" />
+              Unblock
+            </Button>
+          </div>
+        ))}
+      </div>
+    )}
+  </CardContent>
+</Card>
+
+
+        {/* STATS */}
         <div className="grid grid-cols-3 gap-4">
           {["views", "matches", "response_rate"].map((key) => {
             const label =
@@ -362,12 +395,10 @@ export default function Profile() {
                 : key === "matches"
                 ? "Matches"
                 : "Response Rate";
-
             const value =
               key === "response_rate"
                 ? Math.round((user.stats?.response_rate ?? 0) * 100) + "%"
                 : user.stats?.[key] ?? 0;
-
             return (
               <Card key={key} className="glass-card text-center neon-border">
                 <CardContent className="pt-6">

@@ -35,6 +35,22 @@ export const swipeService = {
     const res = await api.post(`/interactions/undo/like/${targetId}`);
     return res.data?.data;
   },
+
+  // ---------------------------------------------------
+  // NEW: Accept a swipe request (creates a mutual match)
+  // ---------------------------------------------------
+  acceptSwipe: async (swiperId: string) => {
+    const res = await api.post(`/interactions/swipe/accept/${swiperId}`);
+    return res.data;
+  },
+
+  // ---------------------------------------------------
+  // NEW: Reject a swipe request (deletes pending swipe)
+  // ---------------------------------------------------
+  rejectSwipe: async (swiperId: string) => {
+    const res = await api.post(`/interactions/swipe/reject/${swiperId}`);
+    return res.data;
+  },
 };
 
 export default swipeService;

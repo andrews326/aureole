@@ -21,17 +21,13 @@ export const login = async (email: string, password: string) => {
   return res.data; // { access_token, user_id? }
 };
 
-export const getMyProfile = async (token?: string) => {
-  try {
-    const res = await api.get(`/profile/me`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
-    return res.data;
-  } catch (err: any) {
-    console.error("Error fetching profile:", err);
-    return { exists: false };
-  }
+export const checkProfileStatus = async (token?: string) => {
+  const res = await api.get(`/profile/status`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  return res.data; // { exists: true/false }
 };
+
 
 // Revoke all tokens / logout everywhere (backend should support this route)
 export const logoutAll = async (token?: string) => {

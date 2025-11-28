@@ -27,9 +27,26 @@ export interface UserProfile {
   media: Media[];
   stats?: ProfileStats;
   profile_photo?: string | null;
-  // ADD THIS ↓↓↓
   premium_tier?: number;
+
+  // 👇 Add these new backend fields
+  raw_prompts?: {
+    about?: string;
+    looking_for?: string;
+    interests?: string[];
+    dealbreakers?: string[];
+  };
+
+  interests?: string[];
+
+
+  preferences?: {
+    interests?: string[];
+    values?: string[];
+    dealbreakers?: string[];
+  };
 }
+
 
 // -------- API CALLS --------
 

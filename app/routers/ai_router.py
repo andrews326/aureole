@@ -36,3 +36,5 @@ async def process_profile_ai(
 ):
     result = await run_ai_profile_process(db, current_user)
     return {"msg": "Profile processed successfully", **result}
+
+

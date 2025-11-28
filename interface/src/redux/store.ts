@@ -1,19 +1,9 @@
 // src/redux/store.ts
 
 
-import { configureStore, combineReducers } from "@reduxjs/toolkit";
-import {
-  persistStore,
-  persistReducer,
-  FLUSH,
-  REHYDRATE,
-  PAUSE,
-  PERSIST,
-  PURGE,
-  REGISTER,
-} from "redux-persist";
-import storage from "redux-persist/lib/storage"; // localStorage backend
+// src/redux/store.ts
 
+import { configureStore, combineReducers } from "@reduxjs/toolkit";
 
 import authReducer from "./slices/authSlice";
 import profileReducer from "./slices/profileSlice";
@@ -22,12 +12,10 @@ import matchReducer from "./slices/matchSlice";
 import friendReducer from "./slices/friendSlice";
 import chatReducer from "./slices/chatSlice";
 import sessionReducer from "./slices/sessionSlice";
-import userReducer  from "./slices/userSlice";
-import notificationsReducer from "@/redux/slices/notificationSlice";
+import userReducer from "./slices/userSlice";
+import notificationsReducer from "./slices/notificationSlice";
+import callReducer from "./slices/callSlice";
 
-
-// 🔧 Removed duplicate import
-// import messageReducer from "./slices/sessionSlice";
 
 const rootReducer = combineReducers({
   auth: authReducer,
@@ -39,27 +27,12 @@ const rootReducer = combineReducers({
   session: sessionReducer,
   user: userReducer,
   notifications: notificationsReducer,
+  call: callReducer,
 });
-
-const persistConfig = {
-  key: "root",
-  storage,
-  whitelist: ["auth"], // ✅ persisted slices
-};
-
-const persistedReducer = persistReducer(persistConfig, rootReducer);
 
 export const store = configureStore({
-  reducer: persistedReducer,
-  middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware({
-      serializableCheck: {
-        ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER],
-      },
-    }),
+  reducer: rootReducer,
 });
-
-export const persistor = persistStore(store);
 
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;

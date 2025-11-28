@@ -6,80 +6,69 @@ const CosmicBackground = () => {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
 
-    // --- GLOW ORBS ---
-    const orbs = Array.from({ length: 6 }, () => ({
+    // --- ONLY 3 SOFT ORBS ---
+    const orbs = Array.from({ length: 50 }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      r: Math.random() * 120 + 80,
-      dx: (Math.random() - 0.5) * 0.2,
-      dy: (Math.random() - 0.5) * 0.2,
-      color: Math.random() > 0.5
-        ? "rgba(0, 200, 255, 0.18)" // cyan
-        : "rgba(120, 60, 255, 0.15)", // purple
-    }));
-
-    // --- SOFT DUST PARTICLES ---
-    const dust = Array.from({ length: 80 }, () => ({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      size: Math.random() * 2 + 0.5,
-      speed: Math.random() * 0.3 + 0.1,
-      opacity: Math.random() * 0.4 + 0.2,
-      drift: (Math.random() - 0.5) * 0.3,
+      r: Math.random() * 150 + 120,
+      dx: (Math.random() - 0.5) * 0.1,
+      dy: (Math.random() - 0.5) * 0.1,
+      color:
+        Math.random() > 0.5
+          ? "rgba(0, 200, 255, 0.18)"
+          : "rgba(90, 50, 255, 0.14)",
     }));
 
     let t = 0;
 
     const drawBase = () => {
       const gradient = ctx.createLinearGradient(0, 0, 0, height);
-      gradient.addColorStop(0, "#030615");  // midnight blue
-      gradient.addColorStop(1, "#05010D");  // deep space purple
+      gradient.addColorStop(0, "#020414");
+      gradient.addColorStop(1, "#04010A");
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
     };
 
     const drawFog = () => {
-      const fogGradient = ctx.createRadialGradient(
-        width * 0.6,
-        height * 0.7,
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+
+      // Slow drifting fog bump
+      const fog = ctx.createRadialGradient(
+        width * 0.5,
+        height * 0.7 + Math.sin(t * 0.0003) * 25,
         0,
-        width * 0.6,
+        width * 0.5,
         height * 0.7,
         width * 0.9
       );
 
-      fogGradient.addColorStop(0, "rgba(100, 50, 255, 0.15)");
-      fogGradient.addColorStop(1, "rgba(80, 20, 140, 0)");
+      fog.addColorStop(0, "rgba(140, 80, 255, 0.15)");
+      fog.addColorStop(1, "rgba(0,0,0,0)");
 
-      ctx.globalAlpha = 0.7;
-      ctx.fillStyle = fogGradient;
-
-      ctx.save();
-      ctx.translate(0, Math.sin(t * 0.0004) * 30); // slow vertical drift
+      ctx.fillStyle = fog;
       ctx.fillRect(0, 0, width, height);
       ctx.restore();
-
-      ctx.globalAlpha = 1;
     };
 
     const drawOrbs = () => {
       orbs.forEach((o) => {
-        const radial = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, o.r);
-        radial.addColorStop(0, o.color);
-        radial.addColorStop(1, "rgba(0,0,0,0)");
+        const g = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, o.r);
+        g.addColorStop(0, o.color);
+        g.addColorStop(1, "rgba(0,0,0,0)");
 
-        ctx.fillStyle = radial;
+        ctx.fillStyle = g;
         ctx.beginPath();
         ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
         ctx.fill();
 
+        // ultra-slow drift
         o.x += o.dx;
         o.y += o.dy;
 
@@ -90,29 +79,11 @@ const CosmicBackground = () => {
       });
     };
 
-    const drawDust = () => {
-      dust.forEach((p) => {
-        p.y -= p.speed;
-        p.x += p.drift;
-
-        if (p.y < -10) p.y = height + 10;
-        if (p.x > width + 10) p.x = -10;
-        if (p.x < -10) p.x = width + 10;
-
-        ctx.fillStyle = `rgba(160, 220, 255, ${p.opacity})`;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
-      });
-    };
-
     const animate = () => {
       drawBase();
       drawFog();
       drawOrbs();
-      drawDust();
-
-      t += 1;
+      t++;
       requestAnimationFrame(animate);
     };
 
@@ -131,9 +102,7 @@ const CosmicBackground = () => {
     <canvas
       ref={canvasRef}
       className="fixed inset-0 w-full h-full pointer-events-none"
-      style={{
-        zIndex: -10,
-      }}
+      style={{ zIndex: -10 }}
     />
   );
 };

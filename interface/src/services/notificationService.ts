@@ -1,4 +1,5 @@
 // src/services/notificationService.ts
+
 export interface NotificationEvent {
   event: "notification" | "heartbeat" | "error";
   data?: any;
@@ -7,7 +8,6 @@ export interface NotificationEvent {
 }
 
 export class PersistentNotificationService {
-  private static instance: PersistentNotificationService | null = null;
   private ws: WebSocket | null = null;
   private listeners: ((event: NotificationEvent) => void)[] = [];
   private reconnectInterval = 5000;
@@ -15,39 +15,27 @@ export class PersistentNotificationService {
   private manuallyClosed = false;
   private userId: string;
 
-  private constructor(userId: string) {
+  constructor(userId: string) {
     this.userId = userId;
   }
 
-  /** Singleton accessor */
-  static getInstance(userId: string) {
-    if (!this.instance || this.instance.userId !== userId) {
-      if (this.instance) this.instance.disconnect(); // close old user session
-      this.instance = new PersistentNotificationService(userId);
-    }
-    return this.instance;
-  }
-
   connect() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log("🔗 WS already connected");
-      return;
-    }
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
 
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     const host =
       ["localhost", "127.0.0.1"].includes(window.location.hostname)
         ? "localhost:8000"
         : window.location.host;
-    const wsUrl = `${scheme}://${host}/ws/notifications/${this.userId}`;
 
+    const wsUrl = `${scheme}://${host}/ws/notifications/${this.userId}`;
     console.log("🔔 Connecting to WS:", wsUrl);
+
     this.manuallyClosed = false;
 
     try {
       this.ws = new WebSocket(wsUrl);
-    } catch (err) {
-      console.error("❌ WS create failed:", err);
+    } catch {
       return;
     }
 
@@ -66,16 +54,13 @@ export class PersistentNotificationService {
       }
     };
 
-    this.ws.onerror = (err) => {
-      console.error("⚠️ WS error:", err);
+    this.ws.onerror = () => {
       this.ws?.close();
     };
 
-    this.ws.onclose = (e) => {
-      console.warn("🔌 WS closed:", e.reason || "no reason");
+    this.ws.onclose = () => {
       this.ws = null;
       if (!this.manuallyClosed) {
-        console.log(`🔄 Reconnecting in ${this.reconnectInterval / 1000}s`);
         if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
         this.reconnectTimer = setTimeout(() => this.connect(), this.reconnectInterval);
       }
@@ -83,7 +68,6 @@ export class PersistentNotificationService {
   }
 
   disconnect() {
-    console.log("🧹 Closing WS manually");
     this.manuallyClosed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.ws?.close();

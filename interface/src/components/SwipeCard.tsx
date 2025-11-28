@@ -1,17 +1,16 @@
 // src/components/SwipeCard.tsx
-import {
-  useState,
-  useRef,
-  useEffect,
-  forwardRef,
-  useImperativeHandle,
-} from "react";
-import { MapPin, Info, PawPrint } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Profile } from "@/types/types";
 
-interface SwipeCardProps {
-  profile: Profile;
+
+import {
+  forwardRef,
+  useRef,
+  useImperativeHandle,
+  memo,
+  useState,
+} from "react";
+
+interface Props {
+  profile: any;
   index: number;
   total: number;
   onLike: () => void;
@@ -19,235 +18,176 @@ interface SwipeCardProps {
   onSuperLike?: () => void;
 }
 
-const SwipeCard = (
-  { profile, index, total, onLike, onPass, onSuperLike }: SwipeCardProps,
-  ref: any
-) => {
-  // CARD SWIPE STATE
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-  const [dragging, setDragging] = useState(false);
-  const [animating, setAnimating] = useState(false);
-  const [type, setType] = useState<"like" | "pass" | "superlike" | null>(null);
+const SwipeCard = memo(
+  forwardRef(({ profile, index, total, onLike, onPass, onSuperLike }: Props, ref) => {
+    const cardRef = useRef<HTMLDivElement>(null);
+    const dragging = useRef(false);
+    const start = useRef({ x: 0, y: 0 });
+    const pos = useRef({ x: 0, y: 0 });
+    const animating = useRef(false);
 
-  // IMAGE CAROUSEL STATE
-  const [photoIndex, setPhotoIndex] = useState(0);
+    const [photoIndex, setPhotoIndex] = useState(0);
 
-  // FULL-INFO OVERLAY
-  const [isRevealed, setIsRevealed] = useState(false);
+    const nextPhoto = () => {
+      if (profile.photos.length > 1) {
+        setPhotoIndex((i) => (i + 1) % profile.photos.length);
+      }
+    };
 
-  const start = useRef({ x: 0, y: 0 });
-  const isTop = index === total - 1;
-  const stackIndex = total - index - 1;
+    const prevPhoto = () => {
+      if (profile.photos.length > 1) {
+        setPhotoIndex((i) => (i === 0 ? profile.photos.length - 1 : i - 1));
+      }
+    };
 
-  const scale = 1 - stackIndex * 0.05;
-  const translateY = stackIndex * 22;
+    // ------------------------
+    // Drag handlers
+    // ------------------------
+    const applyTransform = () => {
+      const el = cardRef.current;
+      if (!el) return;
 
-  // CAROUSEL HANDLERS
-  const nextPhoto = () => {
-    if (profile.photos.length <= 1) return;
-    setPhotoIndex((i) => (i + 1) % profile.photos.length);
-  };
+      el.style.transform = `translate(${pos.current.x}px, ${pos.current.y}px) rotate(${pos.current.x / 20}deg)`;
+    };
 
-  const prevPhoto = () => {
-    if (profile.photos.length <= 1) return;
-    setPhotoIndex((i) => (i === 0 ? profile.photos.length - 1 : i - 1));
-  };
+    const onPointerDown = (x: number, y: number) => {
+      if (animating.current) return;
+      dragging.current = true;
+      start.current = { x, y };
+    };
 
-  // BUTTON TRIGGER SWIPE
-  useImperativeHandle(ref, () => ({
-    triggerAnimation: (t: "like" | "pass" | "superlike") => {
-      if (!isTop || animating) return;
-      setType(t);
+    const onPointerMove = (x: number, y: number) => {
+      if (!dragging.current || animating.current) return;
+      pos.current = { x: x - start.current.x, y: y - start.current.y };
+      requestAnimationFrame(applyTransform);
+    };
 
-      const drift = 1200;
-      if (t === "like") setPos({ x: drift, y: 0 });
-      if (t === "pass") setPos({ x: -drift, y: 0 });
-      if (t === "superlike") setPos({ x: 0, y: -drift });
-    },
-  }));
+    const onPointerUp = () => {
+      if (!dragging.current || animating.current) return;
+      dragging.current = false;
 
-  // SWIPE COMPLETE
-  useEffect(() => {
-    if (!type) return;
-    setAnimating(true);
+      const threshold = 120;
 
-    const timer = setTimeout(() => {
-      if (type === "like") onLike();
-      if (type === "pass") onPass();
-      if (type === "superlike") onSuperLike?.();
+      if (pos.current.x > threshold) {
+        swipeOut("right");
+      } else if (pos.current.x < -threshold) {
+        swipeOut("left");
+      } else if (pos.current.y < -threshold) {
+        swipeOut("up");
+      } else {
+        resetPosition();
+      }
+    };
 
-      setAnimating(false);
-      setType(null);
-      setPos({ x: 0, y: 0 });
-    }, 600);
+    const swipeOut = (dir: "left" | "right" | "up") => {
+      animating.current = true;
+      const el = cardRef.current;
+      if (!el) return;
 
-    return () => clearTimeout(timer);
-  }, [type]);
+      let tx = 0,
+        ty = 0;
+      if (dir === "right") tx = 600;
+      if (dir === "left") tx = -600;
+      if (dir === "up") ty = -600;
 
-  // DRAG HANDLERS
-  const startDrag = (x: number, y: number) => {
-    if (!isTop || animating) return;
-    start.current = { x: x - pos.x, y: y - pos.y };
-    setDragging(true);
-  };
+      el.style.transition = "transform 0.45s ease-out";
+      el.style.transform = `translate(${tx}px, ${ty}px) rotate(${tx / 20}deg)`;
 
-  const moveDrag = (x: number, y: number) => {
-    if (!dragging || !isTop || animating) return;
-    setPos({ x: x - start.current.x, y: y - start.current.y });
-  };
+      setTimeout(() => {
+        if (dir === "right") onLike();
+        if (dir === "left") onPass();
+        if (dir === "up") onSuperLike?.();
 
-  const endDrag = () => {
-    if (!dragging || animating || !isTop) return;
-    setDragging(false);
+        animating.current = false;
+      }, 450);
+    };
 
-    const threshold = 130;
-    if (Math.abs(pos.x) > threshold) {
-      if (pos.x > 0) setType("like");
-      else setType("pass");
+    const resetPosition = () => {
+      const el = cardRef.current;
+      if (!el) return;
 
-      const glide = pos.x > 0 ? 1200 : -1200;
-      setPos({ x: glide, y: pos.y });
-    } else {
-      setPos({ x: 0, y: 0 });
-    }
-  };
+      el.style.transition = "transform 0.3s ease-out";
+      el.style.transform = "translate(0px, 0px) rotate(0deg)";
+      pos.current = { x: 0, y: 0 };
 
-  // VISUAL EFFECTS
-  const rotation = pos.x / 16;
-  const parallaxX = pos.x * 0.012;
-  const parallaxY = pos.y * 0.012;
+      setTimeout(() => {
+        el.style.transition = "";
+      }, 300);
+    };
 
-  const likeOpacity = Math.min(Math.max(pos.x / 120, 0), 1);
-  const passOpacity = Math.min(Math.max(-pos.x / 120, 0), 1);
+    // imperative external triggers
+    useImperativeHandle(ref, () => ({
+      triggerAnimation: (type: "like" | "pass" | "superlike") => {
+        if (animating.current) return;
+        if (type === "like") swipeOut("right");
+        if (type === "pass") swipeOut("left");
+        if (type === "superlike") swipeOut("up");
+      },
+    }));
 
-  const transform =
-    type === "like"
-      ? "translateX(120%) rotate(14deg)"
-      : type === "pass"
-      ? "translateX(-120%) rotate(-14deg)"
-      : type === "superlike"
-      ? "translateY(-120%) scale(1.06)"
-      : `translate(${pos.x}px, ${pos.y}px) rotate(${rotation}deg)`;
+    // ------------------------
+    // STACK POSITIONING FIX
+    // ------------------------
+    const depth = index;
 
-  return (
-    <div
-      className={cn(
-        "absolute inset-0 rounded-3xl overflow-hidden soft-depth-card",
-        "cursor-grab active:cursor-grabbing select-none transition-all duration-500"
-      )}
-      style={{
-        transform: `${transform} scale(${scale}) translateY(${translateY}px)`,
-        zIndex: 200 - stackIndex,
-      }}
-      onMouseDown={(e) => startDrag(e.clientX, e.clientY)}
-      onMouseMove={(e) => moveDrag(e.clientX, e.clientY)}
-      onMouseUp={endDrag}
-      onMouseLeave={endDrag}
-      onTouchStart={(e) => startDrag(e.touches[0].clientX, e.touches[0].clientY)}
-      onTouchMove={(e) => moveDrag(e.touches[0].clientX, e.touches[0].clientY)}
-      onTouchEnd={endDrag}
-      onClick={() => setIsRevealed(true)}
-    >
-      {/* ==== IMAGE CAROUSEL ==== */}
-      <img
-        key={photoIndex} // forces fade animation
-        src={profile.photos[photoIndex] || "/fallback.jpg"}
-        alt={profile.name}
-        draggable={false}
-        className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 fade-image"
+    return (
+      <div
+        ref={cardRef}
+        className="absolute inset-0 rounded-2xl overflow-hidden bg-black"
         style={{
-          transform: `translate(${parallaxX}px, ${parallaxY}px) scale(1.08)`,
-          transition: dragging ? "none" : "transform 0.45s ease, opacity 0.35s ease",
+          zIndex: 100 - index,
+          transform: `scale(${1 - depth * 0.04}) translateY(${depth * 14}px)`,
+          touchAction: "none",
         }}
-      />
-
-      {/* ==== TAP ZONES FOR CAROUSEL ==== */}
-      <div className="absolute inset-0 z-30 flex">
-        <div
-          className="w-1/2 h-full"
-          onClick={(e) => {
-            e.stopPropagation();
-            prevPhoto();
-          }}
-        />
-        <div
-          className="w-1/2 h-full"
-          onClick={(e) => {
-            e.stopPropagation();
-            nextPhoto();
-          }}
-        />
-      </div>
-
-      {/* ==== PHOTO INDICATORS ==== */}
-      <div className="absolute top-4 left-0 right-0 flex justify-center gap-1 z-40">
-        {profile.photos.map((_, i) => (
-          <div
-            key={i}
-            className={`h-1.5 w-1.5 rounded-full transition-all ${
-              i === photoIndex ? "bg-white" : "bg-white/40"
-            }`}
-          />
-        ))}
-      </div>
-
-      {/* ==== SPARKLES ==== */}
-      <div className="sparkle-layer pointer-events-none"></div>
-
-      {/* ==== OVERLAY BEFORE "REVEAL" ==== */}
-      {!isRevealed && <div className="full-glass-cover"></div>}
-
-      {/* ==== INFO BUTTON ==== */}
-      <button
-        className="reveal-button z-40"
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsRevealed(true);
-        }}
+        onMouseDown={(e) => onPointerDown(e.clientX, e.clientY)}
+        onMouseMove={(e) => onPointerMove(e.clientX, e.clientY)}
+        onMouseUp={onPointerUp}
+        onMouseLeave={onPointerUp}
+        onTouchStart={(e) => onPointerDown(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchMove={(e) => onPointerMove(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchEnd={onPointerUp}
       >
-        <Info className="w-4 h-4 text-black" />
-      </button>
 
-      {/* ==== BOTTOM DETAILS ==== */}
-      <div className="absolute bottom-0 left-0 w-full p-6 z-40">
-        <div className="flex items-center gap-2 mb-1">
-          <h2 className="text-3xl font-semibold text-white drop-shadow-sm">
-            {profile.name},{" "}
-            <span className="text-gray-200 font-light">{profile.age}</span>
-          </h2>
+        {/* PHOTO INDICATORS */}
+<div className="absolute top-4 left-0 right-0 flex justify-center gap-1 z-20">
+  {profile.photos.map((_, i) => (
+    <div
+      key={i}
+      className={`h-1.5 w-1.5 rounded-full transition-all ${
+        i === photoIndex ? "bg-white" : "bg-white/40"
+      }`}
+    />
+  ))}
+</div>
 
-          <PawPrint className="w-3.5 h-3.5 text-grey-300" strokeWidth={3.5} />
+        {/* IMAGE */}
+        <div className="w-full h-full relative">
+            <img
+             key={photoIndex}
+             src={profile.photos[photoIndex] || "/fallback.jpg"}
+             loading="lazy"
+             alt="profile"
+             className="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-300"
+             onLoad={(e) => (e.currentTarget.style.opacity = "1")}
+            />
         </div>
 
-        {profile.distance && (
-          <p className="flex items-center gap-1.5 text-sm text-gray-200/90">
-            <MapPin className="w-4 h-4 text-cyan-300" />
-            {profile.distance}
-          </p>
-        )}
 
-        <p className="text-md text-gray-200 mt-3 line-clamp-3">
-          {profile.bio}
-        </p>
-      </div>
-
-      {/* ==== LIKE / PASS OVERLAYS ==== */}
-      <div className="absolute inset-0 flex justify-between px-8 pt-8 pointer-events-none z-40">
-        <div
-          className="text-6xl font-black text-red-400 opacity-0 drop-shadow-lg"
-          style={{ opacity: passOpacity }}
-        >
-          ✖
+        {/* SLIDER TAP ZONES */}
+        <div className="absolute inset-0 flex">
+          <div className="flex-1" onClick={(e) => (e.stopPropagation(), prevPhoto())} />
+          <div className="flex-1" onClick={(e) => (e.stopPropagation(), nextPhoto())} />
         </div>
-        <div
-          className="text-6xl font-black text-emerald-400 opacity-0 drop-shadow-lg"
-          style={{ opacity: likeOpacity }}
-        >
-          ❤
+
+        {/* TEXT */}
+        <div className="absolute bottom-0 p-4 w-full text-white bg-gradient-to-t from-black/80 to-transparent">
+          <div className="text-xl font-bold">
+            {profile.name}, {profile.age}
+          </div>
         </div>
       </div>
-    </div>
-  );
-};
+    );
+  })
+);
 
-export default forwardRef(SwipeCard);
+export default SwipeCard;

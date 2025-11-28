@@ -4,6 +4,8 @@
 import asyncio
 from typing import Dict, List
 from fastapi import WebSocket
+from utils.ws_safe import safe_payload
+
 
 class ConnectionManager:
     def __init__(self):
@@ -39,7 +41,7 @@ class ConnectionManager:
 
         for ws in list(websockets):
             try:
-                await ws.send_json(message)
+                await ws.send_json(safe_payload(message))
                 sent = True
             except Exception as e:
                 print(f"⚠️ Removing stale socket for {user_id}: {e}")
@@ -69,7 +71,7 @@ class ConnectionManager:
         for user_id, websockets in items:
             for ws in list(websockets):
                 try:
-                    await ws.send_json(message)
+                    await ws.send_json(safe_payload(message))
                 except Exception as e:
                     print(f"⚠️ Broadcast fail for {user_id}: {e}")
                     await self.disconnect(user_id, ws)

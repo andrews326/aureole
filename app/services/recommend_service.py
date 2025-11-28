@@ -18,10 +18,8 @@ async def get_proximity_first(
     radius_km: float = 5.0,
     limit: int = 20,
 ) -> list[MatchResponse]:
-    """
-    Proximity-first recommendation:
-    50% proximity, 40% embedding similarity, 10% recency, + optional premium boost
-    """
+
+    from services.notification_service import fetch_user_media_map
 
     if not (current_user.latitude and current_user.longitude):
         return []
@@ -34,9 +32,8 @@ async def get_proximity_first(
 
     lat, lon = current_user.latitude, current_user.longitude
 
-    # Bounding box for SQL filtering
     lat_range = radius_km / 111
-    lon_range = radius_km / (111 * (math.cos(lat * 3.141592653589793 / 180)))
+    lon_range = radius_km / (111 * math.cos(lat * math.pi / 180))
 
     stmt = (
         select(
@@ -48,8 +45,6 @@ async def get_proximity_first(
             User.longitude,
             User.last_active,
             User.premium_tier,
-            User.gender,
-            User.preference,
             (1 - Profile.embedding.l2_distance(current_profile.embedding)).label("similarity"),
         )
         .join(Profile, Profile.user_id == User.id)
@@ -69,40 +64,48 @@ async def get_proximity_first(
     if not candidates:
         return []
 
+    # 🔥 Bulk media lookup
+    candidate_ids = [str(c.id) for c in candidates]
+    media_map = await fetch_user_media_map(db, candidate_ids)
+
     matches = []
     now = datetime.now(timezone.utc)
 
     for c in candidates:
-        # Compute exact distance
         distance_km = haversine_distance(lat, lon, c.latitude, c.longitude)
         if distance_km > radius_km:
             continue
 
-        # Weighted scores
         proximity_score = max(0, 1 - (distance_km / radius_km))
         embedding_score = max(0, min(1, c.similarity))
         recency_hours = (now - c.last_active).total_seconds() / 3600
         recency_score = max(0.5, min(1.0, 1 - recency_hours / 24))
 
-        base_score = (proximity_score * 0.5) + (embedding_score * 0.4) + (recency_score * 0.1)
+        base_score = (0.5 * proximity_score) + (0.4 * embedding_score) + (0.1 * recency_score)
+        final_score = apply_premium_boost(
+            base_score,
+            candidate_tier=c.premium_tier,
+            current_tier=current_user.premium_tier,
+        )
 
-        # Apply premium boost
-        final_score = apply_premium_boost(base_score, candidate_tier=c.premium_tier, current_tier=current_user.premium_tier)
+        uid = str(c.id)
+        photos = media_map.get(uid, [])
 
         matches.append(
             MatchResponse(
-                user_id=str(c.id),
+                user_id=uid,
                 full_name=c.full_name or "",
                 age=c.age or 0,
                 bio=c.bio or "",
-                match_score=math.floor(final_score * 100),
+                match_score=int(final_score * 100),
                 distance_km=round(distance_km, 2),
+                photos=photos[:1],
             )
         )
 
-    # Sort by final score and slice top N
     matches.sort(key=lambda x: x.match_score, reverse=True)
     return matches[:limit]
+
 
 
 # -------------------------------
@@ -145,19 +148,15 @@ async def get_compatibility_first_recommendations(
     current_user: User,
     limit: int = 20
 ) -> list[MatchResponse]:
-    """
-    Mode 1: Compatibility-first
-    Uses 70% AI embedding similarity + 30% preference alignment.
-    Ignores location entirely.
-    """
-    # 1️⃣ Get current user's embedding
+
+    from services.notification_service import fetch_user_media_map
+
     current_profile = await db.scalar(
         select(Profile).where(Profile.user_id == current_user.id)
     )
     if not current_profile or current_profile.embedding is None:
         return []
 
-    # 2️⃣ Fetch other active profiles
     stmt = (
         select(
             User.id,
@@ -181,22 +180,29 @@ async def get_compatibility_first_recommendations(
 
     result = await db.execute(stmt)
     candidates = result.all()
-    matches = []
 
-    # 3️⃣ Combine embedding + preference weights
+    # 🔥 Bulk media lookup
+    candidate_ids = [str(c.id) for c in candidates]
+    media_map = await fetch_user_media_map(db, candidate_ids)
+
+    matches = []
     for c in candidates:
         pref_score = compute_preference_alignment(current_user, c)
         embedding_score = max(0, min(1, c.similarity))
-        final_score = (embedding_score * 0.7) + (pref_score * 0.3)
+        final_score = (0.7 * embedding_score) + (0.3 * pref_score)
+
+        uid = str(c.id)
+        photos = media_map.get(uid, [])
 
         matches.append(
             MatchResponse(
-                user_id=str(c.id),
+                user_id=uid,
                 full_name=c.full_name or "",
                 age=c.age or 0,
                 bio=c.bio or "",
                 match_score=int(final_score * 100),
                 distance_km=None,
+                photos=photos[:1],
             )
         )
 
@@ -212,16 +218,11 @@ async def get_fresh_faces_recommendations(
     current_user: User,
     limit: int = 20,
 ) -> list[MatchResponse]:
-    """
-    Mode 3 – Fresh Faces
-    Randomly show active users (last 24 hours),
-    ignoring compatibility and location.
-    """
 
-    # 1️⃣ Define activity window
+    from services.notification_service import fetch_user_media_map
+
     cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
 
-    # 2️⃣ Query active, visible users
     stmt = (
         select(
             User.id,
@@ -236,25 +237,34 @@ async def get_fresh_faces_recommendations(
             User.is_profile_hidden.is_(False),
             User.last_active >= cutoff_time,
         )
-        .order_by(func.random())  # random shuffle
+        .order_by(func.random())
         .limit(limit)
     )
 
     result = await db.execute(stmt)
     candidates = result.all()
 
-    # 3️⃣ Map to MatchResponse — neutral match score
-    matches = [
-        MatchResponse(
-            user_id=str(c.id),
-            full_name=c.full_name or "",
-            age=c.age or 0,
-            bio=c.bio or "",
-            match_score=60,   # arbitrary neutral score
-            distance_km=None,
+    # 🔥 Bulk media lookup
+    candidate_ids = [str(c.id) for c in candidates]
+    media_map = await fetch_user_media_map(db, candidate_ids)
+
+    matches = []
+
+    for c in candidates:
+        uid = str(c.id)
+        photos = media_map.get(uid, [])
+
+        matches.append(
+            MatchResponse(
+                user_id=uid,
+                full_name=c.full_name or "",
+                age=c.age or 0,
+                bio=c.bio or "",
+                match_score=60,
+                distance_km=None,
+                photos=photos[:1],
+            )
         )
-        for c in candidates
-    ]
 
     return matches
 
@@ -349,8 +359,10 @@ async def get_age_filtered_recommendations(
     limit: int = 20,
     min_age: int = 18,
     max_age: int = 100,
-    gender: Optional[List[str]] = None,   # multi-select genders
+    gender: Optional[List[str]] = None,
 ) -> list[MatchResponse]:
+
+    from services.notification_service import fetch_user_media_map
 
     current_profile = await db.scalar(
         select(Profile).where(Profile.user_id == current_user.id)
@@ -358,7 +370,22 @@ async def get_age_filtered_recommendations(
     if not current_profile or current_profile.embedding is None:
         return []
 
-    # Base search conditions
+    CANONICAL = {
+    "men": "male",
+    "man": "male",
+    "male": "male",
+
+    "women": "female",
+    "woman": "female",
+    "female": "female",
+
+    "non-binary": "non-binary",
+    "nonbinary": "non-binary",
+    "nb": "non-binary",
+    "other": "non-binary",
+}
+
+
     conditions = [
         User.id != current_user.id,
         User.is_active.is_(True),
@@ -367,37 +394,10 @@ async def get_age_filtered_recommendations(
         Profile.embedding.isnot(None),
     ]
 
-    # ---------------------------------------------
-    # GENDER NORMALIZATION (FINAL FIX)
-    # ---------------------------------------------
-    CANONICAL = {
-        # frontend values
-        "men": "man",
-        "women": "woman",
-        "non-binary": "non-binary",
-
-        # DB variations
-        "man": "man",
-        "male": "man",
-
-        "woman": "woman",
-        "female": "woman",
-
-        # common variants
-        "nonbinary": "non-binary",
-        "nb": "non-binary",
-    }
-
     if gender:
-        normalized = []
-        for g in gender:
-            key = g.lower().strip()
-            normalized.append(CANONICAL.get(key, key))
+        normalized = [CANONICAL.get(g.lower(), g.lower()) for g in gender]
         conditions.append(User.gender.in_(normalized))
 
-    # ---------------------------------------------
-    # Query
-    # ---------------------------------------------
     stmt = (
         select(
             User.id,
@@ -415,35 +415,42 @@ async def get_age_filtered_recommendations(
 
     result = await db.execute(stmt)
     candidates = result.all()
+
     if not candidates:
         return []
 
-    # ---------------------------------------------
-    # Scoring
-    # ---------------------------------------------
+    # 🔥 Bulk media lookup
+    candidate_ids = [str(c.id) for c in candidates]
+    media_map = await fetch_user_media_map(db, candidate_ids)
+
     matches = []
     now = datetime.now(timezone.utc)
 
     for c in candidates:
+
         embedding_score = max(0, min(1, c.similarity))
         recency_hours = (now - c.last_active).total_seconds() / 3600
         recency_score = max(0.5, min(1.0, 1 - recency_hours / 24))
 
-        base_score = (embedding_score * 0.4) + (recency_score * 0.6)
+        base_score = (0.4 * embedding_score) + (0.6 * recency_score)
         final_score = apply_premium_boost(
             base_score,
             candidate_tier=c.premium_tier,
             current_tier=current_user.premium_tier,
         )
 
+        uid = str(c.id)
+        photos = media_map.get(uid, [])
+
         matches.append(
             MatchResponse(
-                user_id=str(c.id),
+                user_id=uid,
                 full_name=c.full_name or "",
                 age=c.age or 0,
                 bio=c.bio or "",
-                match_score=math.floor(final_score * 100),
+                match_score=int(final_score * 100),
                 distance_km=None,
+                photos=photos,
             )
         )
 

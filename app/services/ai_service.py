@@ -13,7 +13,7 @@ from models.message_model import Message
 from models.user_model import Notification, User
 from utils.config import settings
 from utils.prompts import AI_PROFILE_SYSTEM_PROMPT, make_compatibility_user_prompt, make_single_user_prompt
-from services.notification_service import create_and_push_notification
+from services.notification_service import create_and_push_notification, assert_can_send
 
 
 
@@ -222,27 +222,45 @@ async def send_user_message_service(
     db: AsyncSession,
     sender_id: str,
     receiver_id: str,
-    content: str
+    content: str,
+    message_type: str = "text",
+    media_id: str = None
 ):
+    # 🚫 1) BLOCK CHECK (before inserting message)
+    await assert_can_send(db, sender_id, receiver_id)
+
     new_msg = Message(
         id=uuid.uuid4(),
         sender_id=sender_id,
         receiver_id=receiver_id,
         content=content,
+        message_type=message_type,
+        media_id=media_id,
         is_delivered=False,
         is_read=False
     )
+
     db.add(new_msg)
     await db.commit()
     await db.refresh(new_msg)
 
-    # ✅ Push real-time notification (and DB record)
+    # notification preview
+    preview_map = {
+        "text": content,
+        "image": "📷 Photo",
+        "video": "🎥 Video",
+        "audio": "🎵 Audio",
+        "file":  "📄 File",
+    }
+
+    preview = preview_map.get(message_type, content)
+
     await create_and_push_notification(
         db=db,
         recipient_id=receiver_id,
         notif_type="message",
         actor_id=sender_id,
-        message_preview=content,
+        message_preview=preview,
     )
 
     return new_msg

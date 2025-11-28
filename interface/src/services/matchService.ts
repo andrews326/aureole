@@ -21,10 +21,23 @@ export const getCompatibilityMatches = async () => {
 
 // src/services/matchService.ts
 
-export const getAgeFilteredMatches = async (minAge: number, maxAge: number) => {
-  const res = await api.get(
-    `/matches/recommendations/age-filtered?limit=20&min_age=${minAge}&max_age=${maxAge}`
-  );
+export const getAgeFilteredMatches = async (
+  minAge: number,
+  maxAge: number,
+  gender?: string[],
+  limit: number = 20
+) => {
+  const params = new URLSearchParams({
+    min_age: String(minAge),
+    max_age: String(maxAge),
+    limit: String(limit),
+  });
+
+  if (gender && gender.length > 0) {
+    gender.forEach((g) => params.append("gender", g));
+  }
+
+  const res = await api.get(`/matches/recommendations/filtered?${params.toString()}`);
   return res.data;
 };
 

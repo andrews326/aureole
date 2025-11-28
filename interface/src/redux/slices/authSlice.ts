@@ -18,7 +18,9 @@ interface AuthState {
 const DEFAULT_AVATAR = "/images/default-avatar.png";
 
 // Load from localStorage & normalize avatar
-const savedAuth = localStorage.getItem("auth");
+const activeUserId = localStorage.getItem("active_user_id");
+const savedAuth = activeUserId ? localStorage.getItem(`auth_${activeUserId}`) : null;
+
 const parsed = savedAuth ? JSON.parse(savedAuth) : null;
 
 const initialState: AuthState = {
@@ -36,44 +38,49 @@ const authSlice = createSlice({
   name: "auth",
   initialState,
   reducers: {
-    setAuth: (state, action: PayloadAction<{ token: string; user: User }>) => {
-      const token = action.payload.token || null;
-
+    setAuth: (state, action) => {
+      const token = action.payload.token;
       const user = {
         ...action.payload.user,
         avatar: action.payload.user.avatar || DEFAULT_AVATAR,
       };
+      console.log("SET AUTH CALLED WITH:", action.payload);
 
+    
       state.token = token;
       state.user = user;
-      state.isAuthenticated = !!token && !!user?.id;
-
-      localStorage.setItem(
-        "auth",
-        JSON.stringify({ token: state.token, user: state.user })
-      );
+      state.isAuthenticated = true;
+    
+      // Persist per-user
+      localStorage.setItem(`auth_${user.id}`, JSON.stringify({ token, user }));
+      localStorage.setItem("active_user_id", user.id);
     },
-
+    
     updateUser: (state, action: PayloadAction<Partial<User>>) => {
-      if (!state.user) state.user = { id: action.payload.id || "" };
-
+      if (!state.user) return;
+    
       state.user = {
         ...state.user,
         ...action.payload,
         avatar: action.payload.avatar || state.user.avatar || DEFAULT_AVATAR,
       };
-
+    
+      // Save under the correct user key
       localStorage.setItem(
-        "auth",
+        `auth_${state.user.id}`,
         JSON.stringify({ token: state.token, user: state.user })
       );
     },
 
     clearAuth: (state) => {
+      if (state.user?.id) {
+        localStorage.removeItem(`auth_${state.user.id}`);
+      }
+      localStorage.removeItem("active_user_id");
+    
       state.token = null;
       state.user = null;
       state.isAuthenticated = false;
-      localStorage.removeItem("auth");
     },
   },
 });

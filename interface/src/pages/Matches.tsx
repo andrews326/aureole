@@ -11,6 +11,7 @@ import { RootState, AppDispatch } from "@/redux/store";
 import { fetchMatches } from "@/redux/slices/friendSlice";
 import { useAppSelector } from "@/redux/hooks";
 import AvatarCosmic from "@/components/AvatarCosmic";
+import { blockMatchUser } from "@/services/sessionService";
 
 const Matches = () => {
   const navigate = useNavigate();
@@ -46,10 +47,28 @@ const Matches = () => {
       navigate(`/chat/${partnerId}`);
     }, 800);
   };
+
+    // 🔹 NEW: Block handler
+    const handleBlockUser = async (partnerId: string) => {
+      // optional confirmation
+      const ok = window.confirm(
+        "Are you sure you want to block and unmatch this user? You won't be able to chat until you unblock them."
+      );
+      if (!ok) return;
+  
+      try {
+        await blockMatchUser(partnerId);
+        // refresh matches so blocked user disappears
+        dispatch(fetchMatches());
+      } catch (err) {
+        console.error("Failed to block user:", err);
+        // you can show a toast here if you have a system
+      }
+    };
   
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
+    <div className="pb-24 min-h-screen relative overflow-hidden">
       <CosmicBackground />
 
       <div className="relative z-10 container mx-auto px-4 py-8 max-w-4xl">
@@ -65,83 +84,93 @@ const Matches = () => {
         {error && <p className="text-center text-red-500">{error}</p>}
 
         <div className="space-y-6">
-          {uniqueMatches.length > 0 &&
-            uniqueMatches.map((match) => {
-              const lastMessagePreview = match.conversation_starter || "The stars haven’t aligned in conversation yet ✨";
-              const subtitle = (match.mini_traits && match.mini_traits.length > 0)
-                ? match.mini_traits.slice(0, 2).join(", ")
-                : "Cosmic compatibility";
+        {uniqueMatches.length > 0 &&
+  uniqueMatches.map((match) => {
+    // 🔥 FIXED: Use last_message_preview instead of conversation_starter
+    const lastMessagePreview = match.last_message_preview || match.conversation_starter || "The stars haven't aligned in conversation yet ✨";
+    const subtitle = (match.mini_traits && match.mini_traits.length > 0)
+      ? match.mini_traits.slice(0, 2).join(", ")
+      : "Cosmic compatibility";
 
-              return (
-                <Card
-                  key={match.user_id}
-                  className="!bg-white/5 !border-white/10 rounded-2xl cosmic-glow p-4 
-                             hover:scale-[1.015] transition-all duration-300 overflow-hidden relative"
-                >
-                  {starburstMatch === match.user_id && (
-                    <div className="absolute inset-0 animate-particle-burst pointer-events-none z-20" />
-                  )}
+    return (
+      <Card
+        key={match.user_id}
+        className="!bg-white/5 !border-white/10 rounded-2xl cosmic-glow p-4 
+                   hover:scale-[1.015] transition-all duration-300 overflow-hidden relative"
+      >
+        {starburstMatch === match.user_id && (
+          <div className="absolute inset-0 animate-particle-burst pointer-events-none z-20" />
+        )}
 
-                  <div className="flex gap-4">
-                    <div className="relative w-20 h-20 shrink-0">
-                      <div className="absolute inset-0 rounded-full bg-gradient-to-br 
-                          from-cyan-400 via-blue-500 to-purple-500 blur-md opacity-40" />
+        <div className="flex gap-4">
+          <div className="relative w-20 h-20 shrink-0">
+            <div className="absolute inset-0 rounded-full bg-gradient-to-br 
+                from-cyan-400 via-blue-500 to-purple-500 blur-md opacity-40" />
 
-                      <AvatarCosmic
-                        src={getAvatar(match)}
-                        online={!!match.is_online}
-                        verified={false}
-                        size={90}
-                      />
-                    </div>
+            <AvatarCosmic
+              src={getAvatar(match)}
+              online={!!match.is_online}
+              verified={false}
+              size={90}
+            />
+          </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-2xl font-bold text-cosmic">
-                          {match.full_name}, <span className="text-neutral-300">{match.age ?? ""}</span>
-                        </h3>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="text-2xl font-bold text-cosmic">
+                {match.full_name}, <span className="text-neutral-300">{match.age ?? ""}</span>
+              </h3>
 
-                        <div className={`w-3 h-3 rounded-full ${match.is_online ? "bg-green-400" : "bg-gray-400"}`} />
-                      </div>
+              <div className={`w-3 h-3 rounded-full ${match.is_online ? "bg-green-400" : "bg-gray-400"}`} />
+            </div>
 
-                      <p className="text-sm text-gray-300 line-clamp-1">{match.ai_summary}</p>
+            <p className="text-sm text-gray-300 line-clamp-1">{match.ai_summary}</p>
 
-                      <p className="text-xs text-purple-300 mt-1 line-clamp-1">
-                        ✨ {subtitle}
-                      </p>
+            <p className="text-xs text-purple-300 mt-1 line-clamp-1">
+              ✨ {subtitle}
+            </p>
 
-                      <p className="text-sm text-blue-300 mt-1 line-clamp-1">
-                        💬 {lastMessagePreview}
-                      </p>
+            <p className="text-sm text-blue-300 mt-1 line-clamp-1">
+              💬 {lastMessagePreview}
+            </p>
 
-                      <p className="text-xs text-gray-400 italic mt-1 line-clamp-1">
-                        {match.last_active ? new Date(match.last_active).toLocaleString() : "Last active unknown"}
-                      </p>
+            <p className="text-xs text-gray-400 italic mt-1 line-clamp-1">
+              {match.last_active ? new Date(match.last_active).toLocaleString() : "Last active unknown"}
+            </p>
 
-                      <div className="flex gap-3 mt-3">
-                        <Button
-                          onClick={() => handleStartConversation(match.user_id)}
-                          size="sm"
-                          className="bg-cyan-600/20 text-cyan-300 hover:bg-cyan-600/30 px-3 py-1.5 rounded-full"
-                        >
-                          <MessageCircle className="w-4 h-4 mr-1" />
-                          Chat
-                        </Button>
+            <div className="flex gap-3 mt-3">
+              <Button
+                onClick={() => handleStartConversation(match.user_id)}
+                size="sm"
+                className="bg-cyan-600/20 text-cyan-300 hover:bg-cyan-600/30 px-3 py-1.5 rounded-full"
+              >
+                <MessageCircle className="w-4 h-4 mr-1" />
+                Chat
+              </Button>
 
-                        <Button
-                          onClick={() => navigate(`/profile/${match.user_id}`)}
-                          variant="outline"
-                          size="sm"
-                          className="text-white border-white/20 hover:bg-white/10 px-3 py-1.5 rounded-full"
-                        >
-                          View
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
+              <Button
+                onClick={() => navigate(`/profile/${match.user_id}`)}
+                variant="outline"
+                size="sm"
+                className="text-white border-white/20 hover:bg-white/10 px-3 py-1.5 rounded-full"
+              >
+                View
+              </Button>
+
+              {/* 🔹 NEW BLOCK BUTTON */}
+              <Button onClick={() => handleBlockUser(match.user_id)}
+                      variant="outline"
+                      size="sm"
+                      className="border-red-500/50 text-red-300 hover:bg-red-500/10 px-3 py-1.5 rounded-full"
+              >
+              Block
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Card>
+    );
+  })}
 
           {/* EMPTY STATE */}
           {uniqueMatches.length === 0 && !loading && (
