@@ -60,7 +60,7 @@ async def serve_chat_audio(filename: str):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://13.53.56.229:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

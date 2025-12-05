@@ -1172,8 +1172,8 @@ export class PersistentCallService {
 
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     const host =
-      ["localhost", "127.0.0.1"].includes(window.location.hostname)
-        ? "localhost:8000"
+      ["13.53.56.229", "13.53.56.229"].includes(window.location.hostname)
+        ? "13.53.56.229:8000"
         : window.location.host;
 
     const url = `${scheme}://${host}/ws/call/${encodeURIComponent(

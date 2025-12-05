@@ -15,6 +15,7 @@ services:
     restart: always
     networks:
       - aureole
+    entrypoint: /entrypoint.sh  # Use entrypoint script for migrations and app start
 
   frontend:
     build:
@@ -38,15 +39,16 @@ services:
       POSTGRES_DB: aureole
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./app/init_pgvector.sql:/docker-entrypoint-initdb.d/init_pgvector.sql  # Mount script here
+
     ports:
-      - "5433:5432"
+      - "5432:5432"  # Use the default Postgres port
     restart: always
     networks:
       - aureole
 
 volumes:
   pgdata:
-
 
 networks:
   aureole:

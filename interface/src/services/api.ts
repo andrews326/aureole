@@ -4,7 +4,7 @@
 import axios from "axios";
 import { store } from "@/redux/store";
 
-const API_BASE = "http://localhost:8000/api/v1";
+const API_BASE = "http://13.53.56.229:8000/api/v1";
 
 export const api = axios.create({
   baseURL: API_BASE,
