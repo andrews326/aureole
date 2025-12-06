@@ -24,8 +24,8 @@ export class PersistentNotificationService {
 
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     const host =
-      ["13.53.56.229", "13.53.56.229"].includes(window.location.hostname)
-        ? "13.53.56.229:8000"
+      ["13.50.111.194", "13.50.111.194"].includes(window.location.hostname)
+        ? "13.50.111.194:8000"
         : window.location.host;
 
     const wsUrl = `${scheme}://${host}/ws/notifications/${this.userId}`;
