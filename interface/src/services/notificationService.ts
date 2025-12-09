@@ -1,5 +1,8 @@
 // src/services/notificationService.ts
 
+import * as dotenv from 'dotenv';
+dotenv.config();
+import { store } from "@/redux/store";
 export interface NotificationEvent {
   event: "notification" | "heartbeat" | "error";
   data?: any;
@@ -22,11 +25,30 @@ export class PersistentNotificationService {
   connect() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
 
+    // const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+    // const host =
+    //   ["13.50.111.194", "13.50.111.194"].includes(window.location.hostname)
+    //     ? "13.50.111.194:8000"
+    //     : window.location.host;
+
+    const productionIp = process.env.PRODUCTION_IP;
+    let hostIp = "localhost";
+
+    // If PRODUCTION_IP is available, use it as the host IP
+    if (productionIp) {
+      hostIp = productionIp;
+    }
+
+    // Determine the WebSocket protocol based on the page protocol
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-    const host =
-      ["13.50.111.194", "13.50.111.194"].includes(window.location.hostname)
-        ? "13.50.111.194:8000"
-        : window.location.host;
+
+    // Use hostIp if the current hostname matches it, otherwise use window.location.host
+    const host = window.location.hostname === hostIp
+      ? `${hostIp}:8000`
+      : window.location.host;
+
+    console.log("WebSocket URL:", `${scheme}://${host}/ws/`);
+
 
     const wsUrl = `${scheme}://${host}/ws/notifications/${this.userId}`;
     console.log("🔔 Connecting to WS:", wsUrl);
