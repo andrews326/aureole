@@ -86,7 +86,9 @@ export class PersistentChatService {
       return;
     }
 
-    const productionIp = import.meta.env.PRODUCTION_IP;
+    const productionIp = import.meta.env.VITE_PRODUCTION_IP;
+    console.log("production ip ==>>",productionIp);
+
     let hostIp = "localhost";
 
     // If PRODUCTION_IP is available, use it as the host IP

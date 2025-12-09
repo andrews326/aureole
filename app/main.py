@@ -58,9 +58,20 @@ async def serve_chat_audio(filename: str):
 
 
 
+origins = "http://localhost:5173"
+
+# Fetch the 'PRODUCTION_IP' environment variable
+ip = os.getenv("PRODUCTION_IP")
+
+# If the 'PRODUCTION_IP' is set, update origins to use the new IP
+if ip:
+    ip = ip.strip()
+    origins = f"http://{ip}:5173"
+
+# Add CORS middleware to the app with the configured origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://13.50.111.194:5173"],
+    allow_origins=[origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

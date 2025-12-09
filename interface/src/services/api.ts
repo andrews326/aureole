@@ -5,11 +5,11 @@ import axios from "axios";
 import { store } from "@/redux/store";
 
 // Read PRODUCTION_IP environment variable
-const productionIp = import.meta.env.PRODUCTION_IP;
-
+const productionIp = import.meta.env.VITE_PRODUCTION_IP;
+console.log("production ip ==>>",productionIp);
 // Define BASE URL based on environment
 const API_BASE = productionIp ? `http://${productionIp}:8000/api/v1` : "http://localhost:8000/api/v1";
-
+console.log("final url ==>>",API_BASE);
 export const api = axios.create({
   baseURL: API_BASE,
   timeout: 30000,
