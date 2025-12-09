@@ -1,6 +1,5 @@
 
-import * as dotenv from 'dotenv';
-dotenv.config();
+
 import api from "@/services/api";
 import { store } from "@/redux/store";
 
@@ -171,7 +170,7 @@ export class PersistentCallService {
       console.log("🔗 Call WS already active");
       return;
     }
-    const productionIp = process.env.PRODUCTION_IP;
+    const productionIp = import.meta.env.PRODUCTION_IP;
     let hostIp = "localhost";
 
     // If PRODUCTION_IP is available, use it as the host IP

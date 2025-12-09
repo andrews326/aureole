@@ -2,8 +2,7 @@
 // src/services/chatService.ts
 // ----------
 // -------------------
-import * as dotenv from 'dotenv';
-dotenv.config();
+
 import { store } from "@/redux/store";
 export type EventMessage =
   | {
@@ -87,7 +86,7 @@ export class PersistentChatService {
       return;
     }
 
-    const productionIp = process.env.PRODUCTION_IP;
+    const productionIp = import.meta.env.PRODUCTION_IP;
     let hostIp = "localhost";
 
     // If PRODUCTION_IP is available, use it as the host IP

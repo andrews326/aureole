@@ -1,12 +1,11 @@
 // src/services/api.ts
 
-import * as dotenv from 'dotenv';
-dotenv.config();
+
 import axios from "axios";
 import { store } from "@/redux/store";
 
 // Read PRODUCTION_IP environment variable
-const productionIp = process.env.PRODUCTION_IP;
+const productionIp = import.meta.env.PRODUCTION_IP;
 
 // Define BASE URL based on environment
 const API_BASE = productionIp ? `http://${productionIp}:8000/api/v1` : "http://localhost:8000/api/v1";

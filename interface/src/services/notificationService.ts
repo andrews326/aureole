@@ -1,7 +1,5 @@
 // src/services/notificationService.ts
 
-import * as dotenv from 'dotenv';
-dotenv.config();
 import { store } from "@/redux/store";
 export interface NotificationEvent {
   event: "notification" | "heartbeat" | "error";
@@ -31,7 +29,7 @@ export class PersistentNotificationService {
     //     ? "13.50.111.194:8000"
     //     : window.location.host;
 
-    const productionIp = process.env.PRODUCTION_IP;
+    const productionIp = import.meta.env.PRODUCTION_IP;
     let hostIp = "localhost";
 
     // If PRODUCTION_IP is available, use it as the host IP
