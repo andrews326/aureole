@@ -1,34 +1,23 @@
-version: "3.9"
-
 services:
   backend:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
+    image: andrews326/aureole-backend:v1
     container_name: aureole-backend
     ports:
       - "8000:8000"
     env_file:
-      - ./app/.env
-    # depends_on basic start-order; healthcheck below makes DB report ready state
+      - /home/ubuntu/app/.env  # Absolute path to the .env file
     depends_on:
       - db
     restart: always
     networks:
       - aureole
     entrypoint: /entrypoint.sh
-    # optional: mount local scripts during development (uncomment if needed)
-    # volumes:
-    #   - ./app/entrypoint.sh:/entrypoint.sh
-    #   - ./app/wait-for-it.sh:/wait-for-it.sh
 
   frontend:
-    build:
-      context: ./interface
-      dockerfile: Dockerfile
+    image: andrews326/aureole-frontend:v1
     container_name: aureole-frontend
     env_file:
-      - ./interface/.env
+      - /home/ubuntu/interface/.env  # Absolute path to the .env file
     ports:
       - "5173:80"
     depends_on:
@@ -53,7 +42,6 @@ services:
     networks:
       - aureole
     healthcheck:
-      # pg_isready is available in official Postgres variants; if not present in your image adjust command
       test: ["CMD-SHELL", "pg_isready -U postgres -d aureole || exit 1"]
       interval: 10s
       timeout: 5s
